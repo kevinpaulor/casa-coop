@@ -26,10 +26,10 @@ async function aiModel() {
   if (_aiModel) return _aiModel;
   if (!recaptchaSiteKey) { const e = new Error('sem chave'); e.code = 'ia-desligada'; throw e; }
   const base = `https://www.gstatic.com/firebasejs/${AI_V}/`;
-  const [{ initializeApp: initAI }, { initializeAppCheck, ReCaptchaV3Provider }, { getAI, getGenerativeModel, GoogleAIBackend }] =
+  const [{ initializeApp: initAI }, { initializeAppCheck, ReCaptchaEnterpriseProvider }, { getAI, getGenerativeModel, GoogleAIBackend }] =
     await Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-app-check.js'), import(base + 'firebase-ai.js')]);
   const aiApp = initAI(firebaseConfig, 'casa-coop-ia');
-  initializeAppCheck(aiApp, { provider: new ReCaptchaV3Provider(recaptchaSiteKey), isTokenAutoRefreshEnabled: true });
+  initializeAppCheck(aiApp, { provider: new ReCaptchaEnterpriseProvider(recaptchaSiteKey), isTokenAutoRefreshEnabled: true });
   const ai = getAI(aiApp, { backend: new GoogleAIBackend() });
   const cfg = { generationConfig: { temperature: 0.8, maxOutputTokens: 4000 } };
   _aiModel = { main: getGenerativeModel(ai, { model: 'gemini-3.5-flash-lite', ...cfg }),
