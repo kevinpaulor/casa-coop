@@ -12,4 +12,4 @@ export const firebaseConfig = {
 
 // Chave PÚBLICA do reCAPTCHA v3 (App Check). Protege a cota do Gemini contra uso fora deste site.
 // A chave SECRETA nunca entra aqui: ela fica só no console do Firebase (App Check).
-export const recaptchaSiteKey = "6Lfw4DAuAAAAAIXPMjFDApDYiZTiSuONVyVajVPT";
+export const recaptchaSiteKey = "6Lfw4DAuAAAAAIXPMjFDApDYiZTiSu0NVyVajVPT";
