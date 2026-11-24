@@ -196,6 +196,12 @@ header{display:flex;align-items:center;justify-content:space-between;gap:8px;mar
 .foot{display:flex;justify-content:space-between;align-items:center;margin-top:20px;font-size:16px;color:var(--dim)}
 .chip{font-family:'Press Start 2P';font-size:8px;padding:7px 9px;border:2px solid var(--line);background:transparent;color:var(--dim);cursor:pointer}
 @media(max-width:560px){.logo{font-size:13px}.grid{grid-template-columns:repeat(3,1fr);gap:8px}.card{min-height:150px;padding:6px 3px}.card .t{font-size:13px;-webkit-text-stroke:4px #111;min-height:30px}.card .ic{width:56px;height:56px}.card .xp{font-size:14px}.star{width:20px;height:20px}.row .t{font-size:16px}.banner div{font-size:15px}}
+.drawing{position:relative;display:inline-block}
+.drawing canvas.anim{image-rendering:pixelated;width:100%;height:100%;display:block}
+.drawing .pen{position:absolute;font-size:22px;transition:left .12s linear,top .12s linear;filter:drop-shadow(2px 2px 0 #000);pointer-events:none}
+.popin{animation:popin .5s cubic-bezier(.2,1.6,.4,1)}
+@keyframes popin{0%{transform:scale(.3) rotate(-8deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
+.blink{animation:blink .8s steps(2) infinite}@keyframes blink{50%{opacity:.35}}
 </style>
 </head>
 <body>
@@ -645,6 +651,51 @@ function extractSVG(t){
  const m=t.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
  return m?m[1]:t;
 }
+/* Animação "desenhando": pixels coloridos aparecendo linha a linha + lápis andando */
+function drawAnim(box,size){
+ const w=box.clientWidth||110,h=box.clientHeight||110,N=size||16;
+ const keep=box.innerHTML;box.innerHTML='';
+ const wrap=document.createElement('div');wrap.className='drawing';wrap.style.width=w+'px';wrap.style.height=h+'px';
+ const c=document.createElement('canvas');c.className='anim';c.width=c.height=N;const x=c.getContext('2d');
+ const pen=document.createElement('div');pen.className='pen';pen.textContent='✏️';
+ wrap.append(c,pen);box.appendChild(wrap);
+ const P=['#ffd23f','#3ec5ff','#ff5fa2','#4dff88','#c86bff','#ff9f1c','#ffffff','#2a1d12'];
+ let i=0,alive=true;
+ const tick=()=>{if(!alive)return;
+  for(let k=0;k<3;k++){const n=i%(N*N),row=Math.floor(n/N),col=row%2?N-1-n%N:n%N;   // vai e volta, tipo impressora
+   if(n===0){x.fillStyle='#1b1640';x.fillRect(0,0,N,N)}
+   x.fillStyle=P[(Math.random()*P.length)|0];x.fillRect(col,row,1,1);
+   pen.style.left=(col/N*w-4)+'px';pen.style.top=(row/N*h-18)+'px';i++}
+  try{if(typeof beep==='function'&&i%24===0)beep([[880+Math.random()*440,.03]])}catch(e){}
+  setTimeout(tick,45)};
+ tick();
+ return ()=>{alive=false;box.innerHTML=keep};
+}
+/* Revelação "gerando na hora": o desenho pronto aparece quadradinho por quadradinho, com lápis e bipes 8-bit */
+function revealImage(box,src,N,ms){
+ return new Promise(ok=>{
+  const img=new Image();img.onload=()=>{
+   const w=box.clientWidth||110,h=box.clientHeight||110;box.innerHTML='';
+   const wrap=document.createElement('div');wrap.className='drawing';wrap.style.width=w+'px';wrap.style.height=h+'px';
+   const src2=document.createElement('canvas');src2.width=src2.height=N;const sx=src2.getContext('2d');sx.imageSmoothingEnabled=false;sx.drawImage(img,0,0,N,N);
+   const px=sx.getImageData(0,0,N,N).data;
+   const c=document.createElement('canvas');c.className='anim';c.width=c.height=N;const x=c.getContext('2d');x.fillStyle='#1b1640';x.fillRect(0,0,N,N);
+   const pen=document.createElement('div');pen.className='pen';pen.textContent='✏️';
+   wrap.append(c,pen);box.appendChild(wrap);
+   const total=N*N,steps=Math.max(20,Math.round((ms||2400)/40)),per=Math.ceil(total/steps);let i=0;
+   const notes=[262,294,330,392,440,523,587,659,784,880];
+   const tick=()=>{
+    for(let k=0;k<per&&i<total;k++,i++){const row=Math.floor(i/N),col=row%2?N-1-i%N:i%N,o=(row*N+col)*4;
+     x.fillStyle=`rgba(${px[o]},${px[o+1]},${px[o+2]},${(px[o+3]/255)||0})`;x.clearRect(col,row,1,1);x.fillStyle='#1b1640';x.fillRect(col,row,1,1);
+     x.fillStyle=`rgba(${px[o]},${px[o+1]},${px[o+2]},${px[o+3]/255})`;x.fillRect(col,row,1,1);
+     pen.style.left=(col/N*w-4)+'px';pen.style.top=(row/N*h-18)+'px'}
+    if(i%(per*2)<per){const o=((Math.floor(i/N)%N)*N+(i%N))*4,lum=(px[o]+px[o+1]+px[o+2])/765;try{beep([[notes[Math.min(9,(lum*10)|0)],.04]])}catch(e){}}
+    if(i<total)setTimeout(tick,40);else{pen.remove();try{beep(SFX.done)}catch(e){}setTimeout(ok,250)}};
+   tick()};
+  img.onerror=()=>ok();img.src=src;
+ });
+}
+function popIn(el){if(!el)return;el.classList.remove('popin');void el.offsetWidth;el.classList.add('popin')}
 function openDraw(c){
  const id=c.id||c.k,prompt=drawPrompt(c.n);
  modal(`<h2>🎨 ÍCONE: ${esc(c.n).toUpperCase()}</h2>
@@ -664,12 +715,15 @@ function openDraw(c){
  $('dX').onclick=closeModal;
  if(FB&&FB.aiLeft&&houseId)FB.aiLeft(houseId).then(n=>{if($('dLeft'))$('dLeft').textContent=`Desenho grátis feito pelo Gemini (Google). Restam ${Math.max(0,n)} hoje nesta casa. Só o nome da carta é enviado.`}).catch(()=>{});
  $('dAuto').onclick=async()=>{
-  const b=$('dAuto');b.disabled=true;b.textContent='✨ DESENHANDO…';$('dMsg').textContent='Isso leva alguns segundos.';
+  const b=$('dAuto');b.disabled=true;b.textContent='✨ DESENHANDO…';b.classList.add('blink');$('dMsg').textContent='O Gemini está desenhando… leva alguns segundos.';
+  const stop=drawAnim($('dPrev'),16);
   try{
    let ok='';
    for(let i=0;i<2&&!ok;i++){const t=await FB.aiDraw(houseId,prompt);const cl=cleanSVG(extractSVG(t));if(cl&&cl.length>40)ok=cl}
    if(!ok)throw{code:'desenho-invalido'};
-   $('dSvg').value=`<svg viewBox="0 0 64 64">${ok}</svg>`;$('dSvg').oninput();
+   stop();$('dMsg').textContent='Desenhando… ✏️';
+   await revealImage($('dPrev'),'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256"><rect width="64" height="64" fill="#fff"/>${ok}</svg>`),40,2600);
+   if(!$('dSvg'))return;$('dSvg').value=`<svg viewBox="0 0 64 64">${ok}</svg>`;$('dSvg').oninput();popIn($('dPrev'));
    $('dMsg').textContent='Pronto! Gostou? Toque em SALVAR ÍCONE. (Ou desenhe de novo.)';
   }catch(e){
    const c=e&&e.code||'';
@@ -678,9 +732,9 @@ function openDraw(c){
     :/quota|exhausted|429/i.test(String(e&&e.message))?'A cota grátis do Gemini acabou por hoje. Use o jeito manual abaixo.'
     :/app.?check|recaptcha|attestation|403/i.test(String(e&&e.message))?'O desenho automático ainda está sendo ligado. Use o jeito manual por enquanto.'
     :'Não deu para desenhar agora. Tente de novo ou use o jeito manual.';
-   console.warn('aiDraw',e);
+   console.warn('aiDraw',e);stop();
   }
-  if($('dAuto')){b.disabled=false;b.textContent='✨ DESENHAR DE NOVO'}
+  if($('dAuto')){b.disabled=false;b.classList.remove('blink');b.textContent='✨ DESENHAR DE NOVO'}
  };
  $('dSave').onclick=async()=>{
   extraCards[id]={...(extraCards[id]||{}),svg:clean};render();
@@ -716,6 +770,27 @@ async function saveFace(dataUrl){
  try{await FB.updateHouse(houseId,{[me+'.face']:dataUrl});banner('AVATAR NOVO!',NAME[me].toUpperCase())}
  catch(e){alertBox('Não salvou o avatar ('+(e&&e.code||'erro')+').')}
 }
+/* Avatar automático: o Gemini devolve uma grade de pixels (só cores e letras, nada executável) */
+const PX=48;
+function pixelAvatarPrompt(items,color){
+ return `Look at the person in the attached photo and draw them as a ${PX}x${PX} pixel art portrait in the style of a 16-bit arcade game (Metal Slug-like): head and shoulders, front view, cheerful.
+Keep their real features recognizable: skin tone, hair style and color, facial hair, glasses.
+Outfit: ${items||'military jacket'}. Background: solid ${color||'purple'}. Bold dark outlines, simple shading.
+Answer ONLY with JSON: {"palette":{"a":"#rrggbb", ...up to 24 single-letter keys},"rows":[${PX} strings, each exactly ${PX} letters, top to bottom]}`;
+}
+function renderPixelGrid(txt){
+ let o;try{o=JSON.parse(String(txt).replace(/```[a-z]*|```/gi,'').trim())}catch(e){return ''}
+ if(!o||typeof o.palette!=='object'||!Array.isArray(o.rows)||o.rows.length<PX*0.75)return '';
+ const pal={};for(const[k,v]of Object.entries(o.palette).slice(0,40)){if(/^[A-Za-z0-9]$/.test(k)&&/^#[0-9a-fA-F]{6}$/.test(String(v)))pal[k]=v}
+ if(Object.keys(pal).length<3)return '';
+ const rows=o.rows.slice(0,PX).map(r=>String(r));while(rows.length<PX)rows.push(rows[rows.length-1]);
+ const S=4,c=document.createElement('canvas');c.width=c.height=PX*S;const x=c.getContext('2d');
+ const bg=pal[(rows[0]||'')[0]]||'#000';x.fillStyle=bg;x.fillRect(0,0,c.width,c.height);let filled=0;
+ rows.forEach((r,y)=>{for(let i=0;i<PX;i++){const col=pal[r[Math.min(i,r.length-1)]];if(col){x.fillStyle=col;x.fillRect(i*S,y*S,S,S);filled++}}});
+ if(filled<PX*PX*0.6)return '';
+ x.strokeStyle='#000';x.lineWidth=8;x.strokeRect(0,0,c.width,c.height);
+ return c.toDataURL('image/png');
+}
 function alertBox(t){modal(`<p class="hint">${esc(t)}</p><div class="acts"><button class="btn" id="okX">OK</button></div>`);$('okX').onclick=closeModal}
 function openAvatar(){
  if(!me)return;
@@ -728,6 +803,11 @@ function openAvatar(){
   <div style="border:2px solid var(--line);padding:8px;margin-top:10px">
    <p class="hint"><b>⚡ Rápido:</b> pixelar a foto aqui mesmo, sem IA.</p>
    <div class="acts"><button class="btn ghost" id="avPix" disabled>PIXELAR E USAR</button></div></div>
+  <div style="border:2px solid var(--p1);padding:8px;margin-top:10px">
+   <p class="hint"><b>✨ Automático (grátis):</b> o Gemini olha a foto e desenha um retrato em pixel art 48×48, com as roupas que você escreveu.</p>
+   <p class="hint sm" style="opacity:.85">⚠️ Sua foto vai para o Gemini (Google). No plano grátis, o Google pode usar o que recebe para melhorar os produtos dele. A foto em si não fica salva no jogo, só o desenho pronto.</p>
+   <label class="hint sm" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="avOk"> Entendi e quero enviar minha foto</label>
+   <div class="acts"><button class="btn" id="avAuto" disabled>✨ GERAR AVATAR</button></div></div>
   <div style="border:2px solid var(--gold);padding:8px;margin-top:10px">
    <p class="hint"><b>🎮 Estilo Metal Slug (com IA de imagem):</b> copie o pedido, abra o ChatGPT ou o Gemini, <b>anexe a sua foto</b> e cole. Depois envie a imagem pronta aqui.</p>
    <div class="acts"><button class="btn" id="avCp">📋 COPIAR PEDIDO</button></div>
@@ -736,7 +816,29 @@ function openAvatar(){
   <p class="hint" id="avMsg"></p>
   <div class="acts"><button class="btn ghost" id="avX">FECHAR</button></div>`);
  let photo=null;
- $('avF').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{photo=await loadImg(f);$('avA').src=squareCanvas(photo,144).toDataURL('image/jpeg',.85);$('avPix').disabled=false}catch(x){$('avMsg').textContent='Não consegui abrir essa foto.'}};
+ $('avF').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{photo=await loadImg(f);$('avA').src=squareCanvas(photo,144).toDataURL('image/jpeg',.85);$('avPix').disabled=false;upd()}catch(x){$('avMsg').textContent='Não consegui abrir essa foto.'}};
+ const upd=()=>{$('avAuto').disabled=!(photo&&$('avOk').checked)};$('avOk').onchange=upd;
+ $('avAuto').onclick=async()=>{
+  const b=$('avAuto');b.disabled=true;b.textContent='✨ DESENHANDO…';b.classList.add('blink');$('avMsg').textContent='O Gemini está desenhando seu retrato… leva alguns segundos.';
+  const av=$('avA');av.hidden=true;const holder=document.createElement('div');holder.style.cssText='width:144px;height:144px;border:3px solid #000;margin:auto';av.after(holder);const stopA=drawAnim(holder,PX);
+  let fin=false;const done=()=>{if(fin)return;fin=true;stopA();holder.remove();av.hidden=false};
+  holder.scrollIntoView({behavior:'smooth',block:'center'});
+  try{
+   const jpg=squareCanvas(photo,256).toDataURL('image/jpeg',.85).split(',')[1];
+   let url='';
+   for(let i=0;i<2&&!url;i++){const t=await FB.aiDraw(houseId,[pixelAvatarPrompt($('avItems').value.trim(),COLOR_NAME[PCOL[me]]),{inlineData:{data:jpg,mimeType:'image/jpeg'}}],{json:true,temperature:.6,maxTokens:9000});url=renderPixelGrid(t)}
+   if(!url)throw{code:'desenho-invalido'};
+   stopA();$('avMsg').textContent='Desenhando seu retrato… ✏️';await revealImage(holder,url,PX,3200);if(!$('avA'))return;
+   done();$('avA').src=url;popIn($('avA'));$('avMsg').innerHTML='Gostou? <button class="btn" id="avUse">USAR ESTE</button> ou gere de novo.';
+   $('avUse').onclick=async()=>{await saveFace(url);closeModal()};
+  }catch(e){const c=e&&e.code||'',m=String(e&&e.message);
+   $('avMsg').textContent=c==='limite-diario'?'Acabaram os desenhos automáticos de hoje nesta casa. Use o pixel rápido ou o Metal Slug.'
+    :c==='desenho-invalido'?'O desenho veio estranho. Tente de novo.'
+    :/quota|exhausted|429/i.test(m)?'A cota grátis do Gemini acabou por hoje.'
+    :/app.?check|recaptcha|attestation|403/i.test(m)?'O modo automático ainda está sendo ligado. Tente daqui a pouco.'
+    :'Não deu para gerar agora. Tente de novo.';console.warn('avatar',e);done()}
+  if($('avAuto')){b.classList.remove('blink');b.textContent='✨ GERAR DE NOVO';upd()}
+ };
  $('avPix').onclick=async()=>{if(!photo)return;const url=pixelate(photo);$('avA').src=url;await saveFace(url);closeModal()};
  $('avCp').onclick=async()=>{const t=avatarPrompt($('avItems').value.trim(),COLOR_NAME[PCOL[me]]);
   try{await navigator.clipboard.writeText(t);$('avMsg').textContent='Pedido copiado! Anexe sua foto no ChatGPT/Gemini e cole.'}

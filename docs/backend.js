@@ -21,20 +21,18 @@ if (notConfigured) {
 const app = initializeApp(firebaseConfig);
 
 const AI_V = '13.4.0', AI_DAILY = 8;
-let _aiModel = null;
-async function aiModel() {
-  if (_aiModel) return _aiModel;
+let _ai = null, getGenerativeModelFn = null;
+async function aiInstance() {
+  if (_ai) return _ai;
   if (!recaptchaSiteKey) { const e = new Error('sem chave'); e.code = 'ia-desligada'; throw e; }
   const base = `https://www.gstatic.com/firebasejs/${AI_V}/`;
   const [{ initializeApp: initAI }, { initializeAppCheck, ReCaptchaEnterpriseProvider }, { getAI, getGenerativeModel, GoogleAIBackend }] =
     await Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-app-check.js'), import(base + 'firebase-ai.js')]);
   const aiApp = initAI(firebaseConfig, 'casa-coop-ia');
   initializeAppCheck(aiApp, { provider: new ReCaptchaEnterpriseProvider(recaptchaSiteKey), isTokenAutoRefreshEnabled: true });
-  const ai = getAI(aiApp, { backend: new GoogleAIBackend() });
-  const cfg = { generationConfig: { temperature: 0.8, maxOutputTokens: 4000 } };
-  _aiModel = { main: getGenerativeModel(ai, { model: 'gemini-3.5-flash-lite', ...cfg }),
-               backup: getGenerativeModel(ai, { model: 'gemini-3.1-flash-lite', ...cfg }) };
-  return _aiModel;
+  getGenerativeModelFn = getGenerativeModel;
+  _ai = getAI(aiApp, { backend: new GoogleAIBackend() });
+  return _ai;
 }
 
 const auth = getAuth(app);
@@ -159,14 +157,17 @@ const FB = {
   // ===== Desenho automático de ícones (Gemini grátis via Firebase AI Logic + App Check) =====
   // Carregado só quando alguém pede um desenho. Usa um "app" separado só para a IA.
   // Limite: AI_DAILY desenhos por casa por dia (contador em houses/{h}/events/ai-AAAA-MM-DD).
-  async aiDraw(h, prompt) {
+  async aiDraw(h, prompt, opts = {}) {
     const day = new Date().toISOString().slice(0, 10), qref = doc(fs, 'houses', h, 'events', 'ai-' + day);
     const qs = await getDoc(qref), used = qs.exists() ? (qs.data().n || 0) : 0;
     if (used >= AI_DAILY) { const e = new Error('limite'); e.code = 'limite-diario'; throw e; }
-    const model = await aiModel();
+    const ai = await aiInstance();
+    const cfg = { temperature: opts.temperature ?? 0.8, maxOutputTokens: opts.maxTokens || 4000 };
+    if (opts.json) cfg.responseMimeType = 'application/json';
+    const parts = Array.isArray(prompt) ? prompt : [prompt];
     let r;
-    try { r = await model.main.generateContent(prompt); }
-    catch (e) { if (/not.?found|404/i.test(String(e && e.message))) r = await model.backup.generateContent(prompt); else throw e; }
+    try { r = await getGenerativeModelFn(ai, { model: 'gemini-3.5-flash-lite', generationConfig: cfg }).generateContent(parts); }
+    catch (e) { if (/not.?found|404/i.test(String(e && e.message))) r = await getGenerativeModelFn(ai, { model: 'gemini-3.1-flash-lite', generationConfig: cfg }).generateContent(parts); else throw e; }
     await setDoc(qref, { n: used + 1, day }, { merge: true });
     return r.response.text();
   },
