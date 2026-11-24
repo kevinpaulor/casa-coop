@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<!-- Casa Co-op — Central do administrador · © 2026 Kevin Paulo (@Arkev.arq) · Licença MIT -->
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Central — Casa Co-op</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<script>window.ADMINReady=new Promise(r=>{window.__adminResolve=r});</script>
+<script type="module" src="admin-backend.js"></script>
+<style>
+:root{--bg:#0d0b1e;--panel:#1a1636;--line:#3b3470;--gold:#ffd23f;--green:#4dff88;--orange:#ff9f1c;--red:#ff4d4d;--txt:#f4f1ff;--dim:#9c95c9}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(ellipse at 50% -10%,#3a1f6b,transparent 60%),var(--bg);color:var(--txt);font-family:'VT323',monospace;font-size:20px;min-height:100vh;padding:16px}
+.wrap{max-width:1100px;margin:0 auto}
+h1{font-family:'Press Start 2P';font-size:16px;color:var(--gold);text-shadow:3px 3px 0 #000;margin-bottom:4px}
+.sub{color:var(--dim);margin-bottom:16px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.btn{font-family:'Press Start 2P';font-size:9px;padding:10px 12px;background:var(--gold);color:#000;border:3px solid #000;cursor:pointer;box-shadow:0 4px 0 #000}
+.chip{font-family:'Press Start 2P';font-size:8px;padding:7px 9px;border:2px solid var(--line);background:transparent;color:var(--dim);cursor:pointer}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--panel);border:3px solid #000;outline:2px solid var(--line);padding:12px}
+.kpi b{display:block;font-family:'Press Start 2P';font-size:20px;color:var(--gold);margin-bottom:6px}
+.kpi span{color:var(--dim);font-size:17px}
+h2{font-family:'Press Start 2P';font-size:10px;color:var(--dim);margin:18px 0 8px}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:3px solid #000}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #2a2550;vertical-align:top}
+th{font-family:'Press Start 2P';font-size:8px;color:var(--dim);background:#141030;position:sticky;top:0}
+td small{display:block;color:var(--dim);font-size:16px}
+.dot{display:inline-block;width:12px;height:12px;border:2px solid #000;margin-right:6px;vertical-align:middle}
+.on{background:var(--green);box-shadow:0 0 8px var(--green)}.away{background:var(--orange)}.off{background:#555}
+.scroll{max-height:420px;overflow:auto}
+.msg{background:var(--panel);border:3px solid var(--gold);padding:16px;max-width:520px;margin:40px auto;text-align:center}
+.msg code{display:block;margin:10px 0;padding:8px;background:#000;color:var(--gold);font-size:18px;word-break:break-all;user-select:all}
+@media(max-width:700px){.hide-sm{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><div class="msg">Carregando…</div></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ONLINE_MS=3*60e3,AWAY_MS=30*60e3,DAY=864e5;
+let API,presence=[],sessions=[],houses=[],user=null,denied=false;
+function ago(ms){if(!ms)return '—';const s=Math.max(0,(Date.now()-ms)/1e3);if(s<60)return 'agora';if(s<3600)return Math.floor(s/60)+' min';if(s<86400)return Math.floor(s/3600)+' h '+Math.floor(s%3600/60)+' min';return Math.floor(s/86400)+' d'}
+function dur(ms){ms=Math.max(0,ms||0);const m=Math.round(ms/60e3);if(m<1)return '< 1 min';if(m<60)return m+' min';return Math.floor(m/60)+' h '+(m%60)+' min'}
+function when(ms){if(!ms)return '—';const d=new Date(ms);return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
+function status(p){const idle=Date.now()-(p.lastSeen||0);
+ if(p.state==='online'&&idle<ONLINE_MS)return['on','Online'];
+ if(p.state!=='offline'&&idle<AWAY_MS)return['away',p.state==='away'?'App em segundo plano':'Sem sinal recente'];
+ return['off','Offline']}
+function render(){
+ if(denied){$('app').innerHTML=`<div class="msg"><h1>ACESSO RESTRITO</h1><p>Esta central é só do administrador.</p>
+  <p style="margin-top:10px">Se você é o administrador, cole este UID nas regras do Firestore (linha <b>ADMIN_UID</b>) e publique:</p>
+  <code>${esc(user&&user.uid)}</code><p style="color:var(--dim)">Conta: ${esc(user&&user.email)}</p>
+  <div style="margin-top:12px"><button class="chip" id="out">sair</button></div></div>`;$('out').onclick=()=>API.signOut();return}
+ const now=Date.now(),today=new Date();today.setHours(0,0,0,0);
+ const st=presence.map(p=>({p,s:status(p)}));
+ const on=st.filter(x=>x.s[0]==='on').length,away=st.filter(x=>x.s[0]==='away').length;
+ const todayUsers=new Set(sessions.filter(x=>x.last>=today.getTime()).map(x=>x.uid)).size;
+ const weekActive=sessions.reduce((a,x)=>a+(x.activeMs||0),0);
+ const byUser=uid=>sessions.filter(x=>x.uid===uid);
+ const rows=st.sort((a,b)=>(b.p.lastSeen||0)-(a.p.lastSeen||0)).map(({p,s})=>{
+  const ss=byUser(p.uid),tdy=ss.filter(x=>x.last>=today.getTime());
+  return `<tr><td><span class="dot ${s[0]}"></span>${s[1]}</td>
+   <td>${esc(p.player||p.name||'—')}<small>${esc(p.name)}${p.email?' · '+esc(p.email):''}</small></td>
+   <td class="hide-sm">${esc(p.houseName||'— sem casa —')}</td>
+   <td>${when(p.lastSeen)}<small>há ${ago(p.lastSeen)}</small></td>
+   <td>${s[0]==='on'?'—':ago(p.lastSeen)}</td>
+   <td>${tdy.length}<small>${dur(tdy.reduce((a,x)=>a+(x.activeMs||0),0))} ativo</small></td>
+   <td class="hide-sm">${ss.length}<small>${dur(ss.reduce((a,x)=>a+(x.activeMs||0),0))} ativo</small></td>
+   <td class="hide-sm">${esc(p.device||'—')}</td></tr>`}).join('');
+ const srows=sessions.slice(0,200).map(x=>`<tr><td>${when(x.start)}</td><td>${esc(x.player||x.name||'—')}<small>${esc(x.houseName)}</small></td>
+   <td>${dur((x.last||x.start)-x.start)}<small>${dur(x.activeMs)} com o app aberto na tela</small></td><td class="hide-sm">${esc(x.device||'')}</td></tr>`).join('');
+ const hrows=houses.map(h=>`<tr><td>${esc(h.appName||'—')}</td><td>${esc(h.p1&&h.p1.name)}${h.p2&&h.p2.uid?' & '+esc(h.p2.name):' <small>convite pendente para '+esc(h.p2&&h.p2.name)+'</small>'}</td><td>${when(h.createdAt)}</td></tr>`).join('');
+ $('app').innerHTML=`<h1>🛰 CENTRAL CASA CO-OP</h1>
+  <div class="sub"><span>Atualiza sozinha · ${new Date(now).toLocaleTimeString('pt-BR')}</span><span>${esc(user.email)} <button class="chip" id="out">sair</button></span></div>
+  <div class="kpis">
+   <div class="kpi"><b style="color:var(--green)">${on}</b><span>online agora</span></div>
+   <div class="kpi"><b style="color:var(--orange)">${away}</b><span>com o app em segundo plano</span></div>
+   <div class="kpi"><b>${todayUsers}</b><span>pessoas acessaram hoje</span></div>
+   <div class="kpi"><b>${presence.length}</b><span>pessoas no total</span></div>
+   <div class="kpi"><b>${houses.length}</b><span>casas criadas</span></div>
+   <div class="kpi"><b>${dur(weekActive)}</b><span>de uso nos últimos 7 dias</span></div>
+  </div>
+  <h2>👥 PESSOAS</h2><div class="scroll"><table><tr><th>STATUS</th><th>QUEM</th><th class="hide-sm">CASA</th><th>ÚLTIMO SINAL</th><th>INATIVO HÁ</th><th>HOJE</th><th class="hide-sm">7 DIAS</th><th class="hide-sm">APARELHO</th></tr>${rows||'<tr><td colspan="8">Ninguém acessou ainda.</td></tr>'}</table></div>
+  <h2>🕒 ACESSOS (ÚLTIMOS 7 DIAS)</h2><div class="scroll"><table><tr><th>INÍCIO</th><th>QUEM</th><th>DURAÇÃO</th><th class="hide-sm">APARELHO</th></tr>${srows||'<tr><td colspan="4">Nenhum acesso nos últimos 7 dias.</td></tr>'}</table></div>
+  <h2>🏠 CASAS</h2><div class="scroll"><table><tr><th>JOGO</th><th>JOGADORES</th><th>CRIADA EM</th></tr>${hrows||'<tr><td colspan="3">Nenhuma casa ainda.</td></tr>'}</table></div>
+  <p style="color:var(--dim);margin-top:14px;font-size:16px">Online = app aberto na tela nos últimos 3 min · Segundo plano = app aberto mas fora da tela · Tempo ativo = tempo com o app visível.</p>`;
+ $('out').onclick=()=>API.signOut();
+}
+(async()=>{
+ API=await window.ADMINReady;let unsub=[];
+ API.onAuth(u=>{
+  unsub.forEach(f=>{try{f()}catch(e){}});unsub=[];user=u;denied=false;
+  if(!u){$('app').innerHTML='<div class="msg"><h1>CENTRAL CASA CO-OP</h1><p>Área do administrador.</p><div style="margin-top:12px"><button class="btn" id="in">ENTRAR COM GOOGLE</button></div></div>';$('in').onclick=()=>API.signIn().catch(()=>{});return}
+  $('app').innerHTML='<div class="msg">Carregando dados…</div>';
+  const deny=()=>{denied=true;render()};
+  unsub.push(API.watchPresence(l=>{presence=l;render()},deny));
+  unsub.push(API.watchSessions(Date.now()-7*DAY,l=>{sessions=l;render()},deny));
+  unsub.push(API.watchHouses(l=>{houses=l;render()},deny));
+ });
+ setInterval(()=>{if(user&&!denied&&presence.length)render()},30000);
+})();
+</script>
+</body>
+</html>
