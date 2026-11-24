@@ -7,7 +7,7 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
   sendPasswordResetEmail, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, getDoc, setDoc, updateDoc,
-  deleteDoc, onSnapshot, query, orderBy, limit, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+  deleteDoc, onSnapshot, query, orderBy, limit, arrayUnion, where, addDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const notConfigured = !firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith('COLE');
 if (notConfigured) {
@@ -128,6 +128,16 @@ const FB = {
     hb = setInterval(() => { if (document.visibilityState === 'visible') beat('online'); }, 90000);
   },
   trackInfo(o) { info = { ...info, ...o }; beat(document.visibilityState === 'visible' ? 'online' : 'away'); },
+  // Sugestões enviadas ao administrador
+  sendFeedback(d) {
+    const u = auth.currentUser;
+    return addDoc(collection(fs, 'feedback'), { text: String(d.text).slice(0, 600), uid: u.uid, name: d.name || u.displayName || '',
+      email: u.email || '', houseId: d.houseId || '', houseName: d.houseName || '', status: 'nova', createdAt: Date.now() });
+  },
+  watchMyFeedback(next, err) {
+    return onSnapshot(query(collection(fs, 'feedback'), where('uid', '==', auth.currentUser.uid)),
+      s => next(s.docs.map(d => ({ id: d.id, ...d.data() }))), err);
+  },
   watchHouse(h, next, err) { return onSnapshot(doc(fs, 'houses', h), s => next(s.exists() ? s.data() : null), err); },
   updateHouse(h, patch) { return updateDoc(doc(fs, 'houses', h), patch); },
   // Mesmo formato que o jogo já usa: db.collection('tasks').doc(id).set(...), .onSnapshot(...), .orderBy().limit().onSnapshot()

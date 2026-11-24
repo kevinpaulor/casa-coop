@@ -143,6 +143,13 @@ header{display:flex;align-items:center;justify-content:space-between;gap:8px;mar
 .cpick{display:flex;gap:8px;justify-content:center;margin:8px 0}
 .cpick button{width:32px;height:32px;border:3px solid #000;border-radius:6px;cursor:pointer;box-shadow:0 3px 0 #000}
 .cpick button.on{outline:3px solid #fff;transform:translateY(-2px)}
+.adm-note{background:#1a1400;border:3px solid var(--gold);padding:10px;margin-bottom:10px;font-size:18px;line-height:1.2}
+.adm-note b{color:var(--gold)}
+.avprev{display:flex;gap:10px;justify-content:center;margin:8px 0}
+.avprev img,.avprev canvas{width:110px;height:110px;border:3px solid #000;border-radius:8px;background:#2b2560;image-rendering:pixelated}
+.box textarea{width:100%;font-family:'VT323';font-size:19px;background:#000;color:#fff;border:2px solid var(--line);padding:8px;margin-top:6px}
+.box .sm{font-size:16px;color:var(--dim)}
+.box a.btn{text-decoration:none;display:inline-block}
 /* ---------- Placar ---------- */
 .score{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .pcard{background:var(--panel);border:4px solid var(--pc);padding:12px;text-align:center;box-shadow:0 5px 0 #000}
@@ -340,7 +347,7 @@ const ROCKET=c=>`<svg viewBox="0 0 96 44"><path d="M22 10h46c12 0 22 6 26 12-4 6
 /* ================= ESTADO ================= */
 let db=null,user=null,uid=null,me=null,local=false,view='catalogo',sound=true;
 let tasks={};            // id -> task
-let requests={},suggestions={},approvals={},iAmOwner=false,events={};
+let requests={},suggestions={},approvals={},iAmOwner=false,events={},myFeedback=[];
 const LOG_START=0;   // antes disso, o log é reconstruído a partir das datas das tarefas
 let extraCards={};       // id -> carta vinda do banco (coleção cards)
 let players={p1:null,p2:null};
@@ -446,26 +453,16 @@ function render(){
    r.querySelectorAll('[data-s]').forEach(b=>b.onclick=e=>setStatus(id,b.dataset.s,e));
    const d=r.querySelector('[data-del]');if(d)d.onclick=()=>confirmBox(`Remover "${esc(tasks[id].name)}"?`,()=>removeTask(id));});
  }else if(view==='ideias'){
-  const st=id=>(approvals[id]&&approvals[id].status)||'pending';
-  const all=Object.entries(suggestions).filter(([,x])=>x&&x.text).sort((a,b)=>(b[1].createdAt||0)-(a[1].createdAt||0));
-  const grp=k=>all.filter(([id])=>st(id)===k);
-  const item=([id,x])=>{const k=st(id);return `<div class="sug" data-id="${esc(id)}"><div class="sug-h"><img src="${FACE[x.by]||FACE.p1}" alt=""><b style="color:${PCOL[x.by]||'#fff'}">${NAME[x.by]||'?'}</b><span>${new Date(x.createdAt||0).toLocaleDateString('pt-BR')}</span></div>
-    <p>${esc(x.text)}</p>${approvals[id]&&approvals[id].note?`<p class="note">🤖 ${esc(approvals[id].note)}</p>`:''}
-    ${k==='pending'&&iAmOwner?'<div class="btns"><button class="btn" data-ap="approved">✓ APROVAR</button><button class="btn ghost" data-ap="rejected">✕ RECUSAR</button></div>':''}
-    ${k==='pending'&&!iAmOwner?'<p class="note">Aguardando ${esc(NAME.p1)} aprovar.</p>':''}
-    ${k==='approved'&&iAmOwner?'<div class="btns"><button class="btn" data-ap="done">🚀 FEITA</button><button class="btn ghost" data-ap="pending">↺ DESFAZER</button></div>':''}
-    ${(k==='pending'||k==='rejected')&&(x.by===me||iAmOwner)?'<button class="sb del" data-delsug="1" title="Apagar">🗑</button>':''}</div>`};
-  const sec=(t,arr,empty)=>`<div class="sec">${t} (${arr.length})</div>`+(arr.length?arr.map(item).join(''):`<p class="empty">${empty}</p>`);
-  v.innerHTML=`<p class="hint">Ideias para melhorar o app. Os dois podem sugerir; ${esc(NAME.p1)} aprova. Aprovadas viram a lista de melhorias da casa.</p>
-   <div class="sug-new"><textarea id="sugTxt" maxlength="600" placeholder="Ex: ter um som diferente quando alguém passar na frente"></textarea><button class="btn" id="sugGo">💡 ENVIAR SUGESTÃO</button></div>`+
-   sec('⏳ AGUARDANDO APROVAÇÃO',grp('pending'),'Nenhuma sugestão nova.')+
-   sec('✓ APROVADAS',grp('approved'),'Nada aprovado ainda.')+
-   sec('🚀 FEITAS',grp('done'),'Nenhuma ainda.')+
-   (grp('rejected').length?sec('✕ RECUSADAS',grp('rejected'),''):'');
+  const ST={nova:['📨','Enviada — aguardando leitura','var(--dim)'],lida:['👀','Lida pelo administrador','var(--gold)'],
+   planejada:['🛠','Vai entrar no jogo','var(--orange)'],feita:['🚀','Já está no jogo!','var(--green)'],recusada:['✕','Não vai entrar agora','#ff8a8a']};
+  const mine=myFeedback.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  v.innerHTML=`<div class="adm-note">📨 <b>Sugestões vão direto para o administrador do jogo</b> (Kevin Paulo · @Arkev.arq). Ele lê, responde por aqui e decide o que entra nas próximas versões. Só ele e você veem o que você enviar.</div>
+   <div class="sug-new"><textarea id="sugTxt" maxlength="600" placeholder="Ex: ter um som diferente quando alguém passar na frente"></textarea><button class="btn" id="sugGo">📨 ENVIAR PARA O ADMINISTRADOR</button></div>
+   <p class="hint" id="sugMsg"></p>
+   <div class="sec">MINHAS SUGESTÕES (${mine.length})</div>
+   ${mine.length?mine.map(f=>{const k=ST[f.status]||ST.nova;return `<div class="sug"><div class="sug-h"><span>${k[0]}</span><b style="color:${k[2]}">${k[1]}</b><span>${new Date(f.createdAt||0).toLocaleDateString('pt-BR')}</span></div>
+     <p>${esc(f.text)}</p>${f.reply?`<p class="note">💬 Resposta: ${esc(f.reply)}</p>`:''}</div>`}).join(''):'<p class="empty">Você ainda não mandou nenhuma sugestão.</p>'}`;
   $('sugGo').onclick=sendSuggestion;
-  v.querySelectorAll('.sug').forEach(el=>{const id=el.dataset.id;
-   el.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>setApproval(id,b.dataset.ap));
-   const d=el.querySelector('[data-delsug]');if(d)d.onclick=()=>confirmBox('Apagar esta sugestão?',()=>delSuggestion(id));});
  }else{
   const st=w=>{const m=list().filter(t=>t.owner===w);return{xp:xpOf(w),done:m.filter(t=>t.status==='done').length,doing:m.filter(t=>t.status==='doing').length,todo:m.filter(t=>t.status==='todo').length}};
   const K=st('p1'),J=st('p2');
@@ -497,7 +494,9 @@ function openAssign(c){
  modal(`<h2>${esc(c.n).toUpperCase()}<br><span style="color:#fff">★ ${c.xp} XP</span></h2><div style="width:90px;margin:0 auto">${svg(c.k,'')}</div>
   <p class="hint" style="margin-top:8px">Quem vai fazer?</p>
   <div class="acts"><button class="btn k" id="aK">1P ${esc(NAME.p1.toUpperCase())}</button><button class="btn j" id="aJ">2P ${esc(NAME.p2.toUpperCase())}</button></div>
+  <div class="acts"><button class="chip" id="aD">🎨 DESENHAR ÍCONE COM CLAUDE</button></div>
   <div class="acts"><button class="btn ghost" id="aX">CANCELAR</button></div>`);
+ $('aD').onclick=()=>openDraw(c);
  $('aK').onclick=e=>{addTask(c,'p1',e);closeModal()};$('aJ').onclick=e=>{addTask(c,'p2',e);closeModal()};$('aX').onclick=closeModal;
 }
 function openCustom(){
@@ -632,14 +631,108 @@ function offerMirror(){
  $('mN').onclick=()=>{try{localStorage.removeItem('casacoop-mirror')}catch(e){}closeModal()};
 }
 
+
+/* ===== Desenhar o ícone de uma carta com o Claude (da própria pessoa) ===== */
+function drawPrompt(name){
+ return `Desenhe um ícone para uma carta de jogo de tarefas domésticas: "${name}".
+Estilo: cartoon flat, cores vivas, contorno marrom-escuro grosso, sem texto, centralizado, legível em 56px.
+Regras técnicas: responda SÓ com o código de um <svg viewBox="0 0 64 64">, usando apenas path, rect, circle, ellipse, line, polyline, polygon e g.
+Nos contornos use stroke="#2a1d12" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round". Cores em hex.
+Nada de text, image, defs, gradientes, filtros, style, url() ou script. No máximo 25 formas.`;
+}
+function extractSVG(t){
+ t=String(t||'').replace(/```[a-z]*\n?|```/gi,'');
+ const m=t.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
+ return m?m[1]:t;
+}
+function openDraw(c){
+ const id=c.id||c.k,prompt=drawPrompt(c.n);
+ modal(`<h2>🎨 ÍCONE: ${esc(c.n).toUpperCase()}</h2>
+  <p class="hint sm">1. Copie o pedido e cole no Claude (ou abra direto). 2. Copie o código que ele devolver. 3. Cole aqui embaixo.</p>
+  <div class="acts"><button class="btn" id="dCp">📋 COPIAR PEDIDO</button><a class="btn ghost" id="dOpen" href="https://claude.ai/new?q=${encodeURIComponent(prompt)}" target="_blank" rel="noopener">ABRIR O CLAUDE ↗</a></div>
+  <textarea id="dSvg" rows="5" placeholder="Cole aqui o código <svg>…</svg> que o Claude devolveu"></textarea>
+  <div class="avprev"><div style="width:110px;height:110px;border:3px solid #000;border-radius:8px;background:#fff;padding:6px" id="dPrev"></div></div>
+  <p class="hint" id="dMsg"></p>
+  <div class="acts"><button class="btn" id="dSave" disabled>SALVAR ÍCONE</button><button class="btn ghost" id="dX">FECHAR</button></div>`);
+ let clean='';
+ $('dCp').onclick=async()=>{try{await navigator.clipboard.writeText(prompt);$('dMsg').textContent='Pedido copiado! Cole no Claude.'}catch(e){$('dMsg').textContent='Não copiou — use ABRIR O CLAUDE.'}};
+ $('dSvg').oninput=()=>{clean=cleanSVG(extractSVG($('dSvg').value));
+  $('dPrev').innerHTML=clean?`<svg viewBox="0 0 64 64" width="100%" height="100%">${clean}</svg>`:'';
+  $('dSave').disabled=!(clean&&clean.length>40);$('dMsg').textContent=clean?'':'Ainda não reconheci um desenho válido.'};
+ $('dX').onclick=closeModal;
+ $('dSave').onclick=async()=>{
+  extraCards[id]={...(extraCards[id]||{}),svg:clean};render();
+  try{await db.collection('cards').doc(id).set({...(extraCards[id]||{}),svg:clean,name:(extraCards[id]||{}).name||c.n,xp:(extraCards[id]||{}).xp||c.xp});
+   for(const t of list().filter(t=>t.name===c.n&&t.k!==id)){try{await db.collection('tasks').doc(t.id).update({k:id})}catch(e){}}
+   logEvent('card_icon',{name:c.n,cardId:id});closeModal();banner('ÍCONE NOVO!',c.n.toUpperCase())}
+  catch(e){$('dMsg').textContent='Não salvou ('+(e&&e.code||'erro')+').'}
+ };
+}
+
+/* ===== Avatar: foto -> pixel no jogo, ou estilo Metal Slug com IA ===== */
+function avatarPrompt(items,color){
+ return `Transform the person in the attached photo into a Metal Slug style pixel art character portrait (SNK arcade game, 1996).
+Head-and-shoulders bust, slightly turned, cheerful and confident expression.
+Keep their real features clearly recognizable: face shape, skin tone, hairstyle and hair color, facial hair, glasses and accessories exactly as in the photo.
+Chunky 16-bit pixel art, limited palette, bold dark outlines, soft cel shading, military adventure vibe.
+Outfit: ${items||'camouflage military jacket and tactical vest'}.
+Plain solid ${color||'purple'} background, centered, square 1:1, no text, no watermark.`;
+}
+const COLOR_NAME={'#3ec5ff':'light blue','#ff5fa2':'pink','#4dff88':'green','#ffd23f':'yellow','#c86bff':'purple','#ff9f1c':'orange'};
+function loadImg(file){return new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=r.result};r.onerror=no;r.readAsDataURL(file)})}
+function squareCanvas(img,size){const c=document.createElement('canvas');c.width=c.height=size;const x=c.getContext('2d');
+ const s=Math.min(img.width,img.height);x.imageSmoothingQuality='high';x.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,size,size);return c}
+function pixelate(img){                                   // efeito pixel art local, sem IA
+ const small=squareCanvas(img,36),x=small.getContext('2d'),d=x.getImageData(0,0,36,36),p=d.data;
+ for(let i=0;i<p.length;i+=4){for(let k=0;k<3;k++){let v=p[i+k];v=(v-128)*1.25+128;p[i+k]=Math.max(0,Math.min(255,Math.round(v/42)*42))}}
+ x.putImageData(d,0,0);
+ const big=document.createElement('canvas');big.width=big.height=144;const b=big.getContext('2d');b.imageSmoothingEnabled=false;b.drawImage(small,0,0,144,144);
+ b.strokeStyle='#000';b.lineWidth=8;b.strokeRect(0,0,144,144);return big.toDataURL('image/png');
+}
+async function saveFace(dataUrl){
+ if(!me)return;CONFIG[me].face=dataUrl;setPlayers();render();
+ try{await FB.updateHouse(houseId,{[me+'.face']:dataUrl});banner('AVATAR NOVO!',NAME[me].toUpperCase())}
+ catch(e){alertBox('Não salvou o avatar ('+(e&&e.code||'erro')+').')}
+}
+function alertBox(t){modal(`<p class="hint">${esc(t)}</p><div class="acts"><button class="btn" id="okX">OK</button></div>`);$('okX').onclick=closeModal}
+function openAvatar(){
+ if(!me)return;
+ modal(`<h2>🖼 MEU AVATAR</h2>
+  <p class="hint sm">Escolha uma foto sua, de rosto, bem iluminada.</p>
+  <input type="file" id="avF" accept="image/*">
+  <div class="avprev"><img id="avA" alt="" src="${FACE[me]}"><canvas id="avB" width="1" height="1" hidden></canvas></div>
+  <p class="hint sm" style="margin-top:6px">O que você gostaria de estar vestindo?</p>
+  <textarea id="avItems" rows="2" maxlength="200" placeholder="Ex: boné vermelho, óculos escuros, jaqueta de couro, colar de dente de tubarão"></textarea>
+  <div style="border:2px solid var(--line);padding:8px;margin-top:10px">
+   <p class="hint"><b>⚡ Rápido:</b> pixelar a foto aqui mesmo, sem IA.</p>
+   <div class="acts"><button class="btn ghost" id="avPix" disabled>PIXELAR E USAR</button></div></div>
+  <div style="border:2px solid var(--gold);padding:8px;margin-top:10px">
+   <p class="hint"><b>🎮 Estilo Metal Slug (com IA de imagem):</b> copie o pedido, abra o ChatGPT ou o Gemini, <b>anexe a sua foto</b> e cole. Depois envie a imagem pronta aqui.</p>
+   <div class="acts"><button class="btn" id="avCp">📋 COPIAR PEDIDO</button></div>
+   <div class="acts"><a class="chip" href="https://chatgpt.com/" target="_blank" rel="noopener">ABRIR CHATGPT ↗</a><a class="chip" href="https://gemini.google.com/app" target="_blank" rel="noopener">ABRIR GEMINI ↗</a></div>
+   <p class="hint sm">Imagem pronta:</p><input type="file" id="avAI" accept="image/*"></div>
+  <p class="hint" id="avMsg"></p>
+  <div class="acts"><button class="btn ghost" id="avX">FECHAR</button></div>`);
+ let photo=null;
+ $('avF').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{photo=await loadImg(f);$('avA').src=squareCanvas(photo,144).toDataURL('image/jpeg',.85);$('avPix').disabled=false}catch(x){$('avMsg').textContent='Não consegui abrir essa foto.'}};
+ $('avPix').onclick=async()=>{if(!photo)return;const url=pixelate(photo);$('avA').src=url;await saveFace(url);closeModal()};
+ $('avCp').onclick=async()=>{const t=avatarPrompt($('avItems').value.trim(),COLOR_NAME[PCOL[me]]);
+  try{await navigator.clipboard.writeText(t);$('avMsg').textContent='Pedido copiado! Anexe sua foto no ChatGPT/Gemini e cole.'}
+  catch(e){alertBox(t)}};
+ $('avAI').onchange=async e=>{const f=e.target.files[0];if(!f)return;
+  try{const img=await loadImg(f);const url=squareCanvas(img,160).toDataURL('image/jpeg',.88);$('avA').src=url;await saveFace(url);closeModal()}
+  catch(x){$('avMsg').textContent='Não consegui abrir essa imagem.'}};
+ $('avX').onclick=closeModal;
+}
 /* ================= SUGESTÕES ================= */
 async function sendSuggestion(){
  const t=$('sugTxt').value.trim();if(!t){$('sugTxt').focus();return}
- const id='s'+now().toString(36)+Math.random().toString(36).slice(2,5);
- const x={text:t.slice(0,600),by:me||'',createdAt:now()};
- suggestions[id]=x;render();
- logEvent('sug_new',{sugId:id,text:x.text.slice(0,140)});beep(SFX.add);banner('IDEIA ENVIADA!',me==='p1'?'AGORA É SÓ APROVAR':'AGUARDANDO '+NAME.p1.toUpperCase());
- if(!local){try{await db.collection('suggestions').doc(id).set(x)}catch(e){fail(e)}}
+ if(!FB||!FB.sendFeedback){$('sugMsg').textContent='Não deu para enviar agora.';return}
+ $('sugGo').disabled=true;$('sugMsg').textContent='Enviando…';
+ try{await FB.sendFeedback({text:t,name:me?NAME[me]:'',houseId,houseName:CONFIG.appName});
+  $('sugTxt').value='';beep(SFX.add);banner('ENVIADA!','O ADMINISTRADOR VAI LER');logEvent('sug_new',{text:t.slice(0,140)})}
+ catch(e){$('sugMsg').textContent='Não enviou ('+(e&&e.code||'erro')+'). Tente de novo.'}
+ finally{const b=$('sugGo');if(b)b.disabled=false}
 }
 async function setApproval(id,status){
  if(!iAmOwner)return;
@@ -683,7 +776,7 @@ const EV={
  task_del:e=>['🗑','tarefas',`${NAME[e.by]||'Alguém'} removeu <b>${esc(e.name)}</b>`],
  card_new:e=>['🃏','cartas',`${NAME[e.by]||'Alguém'} criou a carta <b>${esc(e.name)}</b> (${e.xp}XP)`],
  card_icon:e=>['🎨','cartas',`O Claude desenhou o ícone de <b>${esc(e.name)}</b>`],
- sug_new:e=>['💡','ideias',`${NAME[e.by]||'Alguém'} sugeriu: <i>${esc(e.text||'')}</i>`],
+ sug_new:e=>['💡','ideias',`${NAME[e.by]||'Alguém'} mandou uma sugestão ao administrador: <i>${esc(e.text||'')}</i>`],
  sug_approved:e=>['✅','ideias',`${esc(NAME.p1)} aprovou: <i>${esc(e.text||'')}</i>`],
  sug_rejected:e=>['⛔','ideias',`${esc(NAME.p1)} recusou: <i>${esc(e.text||'')}</i>`],
  sug_pending:e=>['↺','ideias',`${esc(NAME.p1)} desfez a aprovação: <i>${esc(e.text||'')}</i>`],
@@ -868,6 +961,7 @@ function openSettings(){
    <input id="aEm" type="email" placeholder="ou e-mail" style="width:100%;font-family:'VT323';font-size:20px;background:#000;color:#fff;border:2px solid var(--line);padding:8px;margin-top:6px">
    <input id="aPw" type="password" placeholder="senha (mín. 6)" style="width:100%;font-family:'VT323';font-size:20px;background:#000;color:#fff;border:2px solid var(--line);padding:8px;margin-top:6px">
    <div class="acts"><button class="btn ghost" id="aE">SALVAR COM E-MAIL</button></div></div>`:''}
+  <div class="acts"><button class="btn" id="sAv">🖼 MEU AVATAR</button></div>
   <p class="hint" style="margin-top:10px">Nomes e cores</p>
   <input id="sApp" maxlength="24" value="${esc(CONFIG.appName)}">
   <input id="sP1" maxlength="16" value="${esc(NAME.p1)}">${colorPick('sC1',PCOL.p1)}
@@ -878,6 +972,7 @@ function openSettings(){
  wirePick('sC1');wirePick('sC2');
  if(!joined){$('sCopy').onclick=async()=>{try{await navigator.clipboard.writeText(inviteLink());$('sMsg').textContent='Link copiado! Mande para '+NAME.p2+'.'}catch(e){$('sLink').select();$('sMsg').textContent='Selecionado — copie pelo celular.'}};
   const sh=$('sShare');if(sh)sh.onclick=()=>navigator.share({title:CONFIG.appName,text:'Bora dividir as tarefas da casa? Entra aqui:',url:inviteLink()}).catch(()=>{});}
+ $('sAv').onclick=openAvatar;
  $('sX').onclick=closeModal;$('sOut').onclick=()=>{if(FB.isAnon&&FB.isAnon()&&!confirmAnonOut())return;closeModal();FB.signOut()};
  const ag=$('aG');if(ag){
   const done=()=>{closeModal();banner('CONTA SALVA!','AGORA DÁ PRA TROCAR DE APARELHO');updateStatus()};
@@ -892,7 +987,8 @@ function openSettings(){
 }
 function onHouse(h){
  house=h;
- CONFIG={appName:h.appName||'Casa Co-op',p1:{name:h.p1&&h.p1.name,color:h.p1&&h.p1.color,face:''},p2:{name:h.p2&&h.p2.name,color:h.p2&&h.p2.color,face:''}};
+ const okFace=f=>typeof f==='string'&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(f)&&f.length<400000?f:'';
+ CONFIG={appName:h.appName||'Casa Co-op',p1:{name:h.p1&&h.p1.name,color:h.p1&&h.p1.color,face:okFace(h.p1&&h.p1.face)},p2:{name:h.p2&&h.p2.name,color:h.p2&&h.p2.color,face:okFace(h.p2&&h.p2.face)}};
  setPlayers();applyConfig();
  const uid=FB.user.uid;me=h.p1&&h.p1.uid===uid?'p1':h.p2&&h.p2.uid===uid?'p2':null;
  iAmOwner=h.owner===uid;renderMe();render();
@@ -907,7 +1003,7 @@ function enterHouse(){
  unsubs.push(FB.watchHouse(houseId,h=>{if(!h){gate('<p class="hint">Você não faz mais parte desta casa.</p>');return}onHouse(h)},e=>fail(e)));
  unsubs.push(db.collection('tasks').onSnapshot(onTasks,e=>{clearTimeout(loadTimer);fail(e)}));
  unsubs.push(db.collection('cards').onSnapshot(sn=>{const n={};sn.docs.forEach(d=>{n[d.id]=d.data()});extraCards=n;render()},()=>{}));
- unsubs.push(db.collection('suggestions').onSnapshot(sn=>{const n={};sn.docs.forEach(d=>{n[d.id]=d.data()});suggestions=n;if(view==='ideias')render()},()=>{}));
+ if(FB.watchMyFeedback)unsubs.push(FB.watchMyFeedback(l=>{myFeedback=l;if(view==='ideias')render()},()=>{}));
  unsubs.push(db.collection('approvals').onSnapshot(sn=>{const n={};sn.docs.forEach(d=>{n[d.id]=d.data()});approvals=n;if(view==='ideias')render()},()=>{}));
  unsubs.push(db.collection('events').orderBy('at','desc').limit(500).onSnapshot(sn=>{const n={};sn.docs.forEach(d=>{n[d.id]=d.data()});events=n;if(!$('modal').hidden&&$('logList'))drawLog()},()=>{}));
  $('modeNote').textContent='Placar compartilhado';

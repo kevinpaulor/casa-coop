@@ -32,6 +32,14 @@ td small{display:block;color:var(--dim);font-size:16px}
 .scroll{max-height:420px;overflow:auto}
 .msg{background:var(--panel);border:3px solid var(--gold);padding:16px;max-width:520px;margin:40px auto;text-align:center}
 .msg code{display:block;margin:10px 0;padding:8px;background:#000;color:var(--gold);font-size:18px;word-break:break-all;user-select:all}
+.fb{background:var(--panel);border:3px solid #000;outline:2px solid var(--line);padding:10px;margin-bottom:10px}
+.fbh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.fbh small{color:var(--dim);font-size:16px}
+.fb p{margin:6px 0;white-space:pre-wrap}.fb .rep{color:var(--gold);font-size:18px}
+.fba{display:flex;gap:6px;flex-wrap:wrap}.chip.on{background:var(--gold);color:#000;border-color:#000}
+.tag{margin-left:auto;font-family:'Press Start 2P';font-size:8px;padding:4px 6px;border:2px solid var(--line)}.t-nova{color:#000;background:var(--gold)}
+.risk{color:#ff8a8a;font-size:18px}
+.btn.cp{font-size:8px;padding:7px 9px;margin-left:auto}
+.replybox{margin-top:8px}.replybox textarea{width:100%;min-height:60px;background:#000;color:#fff;border:2px solid var(--line);font-family:'VT323';font-size:18px;padding:6px;margin-bottom:6px}
 @media(max-width:700px){.hide-sm{display:none}}
 </style>
 </head>
@@ -41,7 +49,7 @@ td small{display:block;color:var(--dim);font-size:16px}
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ONLINE_MS=3*60e3,AWAY_MS=30*60e3,DAY=864e5;
-let API,presence=[],sessions=[],houses=[],user=null,denied=false;
+let API,presence=[],sessions=[],houses=[],feedback=[],user=null,denied=false;
 function ago(ms){if(!ms)return '—';const s=Math.max(0,(Date.now()-ms)/1e3);if(s<60)return 'agora';if(s<3600)return Math.floor(s/60)+' min';if(s<86400)return Math.floor(s/3600)+' h '+Math.floor(s%3600/60)+' min';return Math.floor(s/86400)+' d'}
 function dur(ms){ms=Math.max(0,ms||0);const m=Math.round(ms/60e3);if(m<1)return '< 1 min';if(m<60)return m+' min';return Math.floor(m/60)+' h '+(m%60)+' min'}
 function when(ms){if(!ms)return '—';const d=new Date(ms);return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
@@ -49,6 +57,49 @@ function status(p){const idle=Date.now()-(p.lastSeen||0);
  if(p.state==='online'&&idle<ONLINE_MS)return['on','Online'];
  if(p.state!=='offline'&&idle<AWAY_MS)return['away',p.state==='away'?'App em segundo plano':'Sem sinal recente'];
  return['off','Offline']}
+const RISKS=[
+ [/senha|password|login de|credencia/i,'pede senha ou credencial'],
+ [/cart[aã]o|pix|pagamento|pagar|cobran|boleto|dinheiro|cpf|rg\b|documento/i,'envolve pagamento ou documentos'],
+ [/localiza|gps|onde (a pessoa|ele|ela) est|rastre/i,'envolve localização ou rastreamento'],
+ [/c[aâ]mera|microfone|grav(ar|ação) (de )?(voz|áudio|video)|contatos/i,'pede câmera, microfone ou contatos'],
+ [/(ver|acessar|mostrar|ler).*(outr[ao]s? casa|outros casais|todo mundo|todos os usu)|ranking (geral|global)/i,'mistura dados entre casas'],
+ [/admin|administrador|permiss|regras?\b|liberar acesso|qualquer um (pode|possa)/i,'mexe em permissões ou regras de acesso'],
+ [/apagar tudo|deletar tudo|zerar (tudo|todos)|resetar todos|excluir conta/i,'apaga dados em massa'],
+ [/script|c[oó]digo|html|javascript|eval|plugin|extens/i,'pede para rodar código ou conteúdo externo'],
+ [/link externo|outro site|enviar (para|pro) (e-?mail|whats|telegram)|notifica|compartilhar automatic|api/i,'envia dados para fora do jogo'],
+ [/an[uú]ncio|propaganda|vender|monetiz/i,'anúncios ou monetização']];
+function risks(t){return RISKS.filter(([re])=>re.test(t||'')).map(([,l])=>l)}
+function requestText(list){
+ return `Implemente no Casa Co-op (versão aberta: repositório kevinpaulor/casa-coop, pasta docs; Firebase "casa-co-op") a(s) sugestão(ões) abaixo, que eu (Kevin Paulo, administrador) quero avaliar com você:
+
+`+list.map((f,i)=>{const r=risks(f.text);return `${i+1}. "${f.text}"
+   Enviada por ${f.name||'—'}${f.houseName?' (casa "'+f.houseName+'")':''} em ${when(f.createdAt)}. [id ${f.id}]${r.length?'\n   ⚠ Alerta automático da central: '+r.join('; ')+'.':''}`}).join('\n\n')+`
+
+Antes de implementar, seja criterioso e siga estas regras de segurança:
+1. Primeiro me diga se a ideia é segura e como pretende fazer; se houver risco, pergunte antes de construir.
+2. Recuse (ou proponha uma alternativa segura) para qualquer coisa que: peça senhas, cartão, Pix, CPF ou documentos; acesse localização, câmera, microfone ou contatos; carregue scripts, fontes de dados ou conteúdo de sites de terceiros; execute texto digitado por usuários como código (eval, innerHTML sem escapar); envie dados para fora do Firebase; deixe uma casa ver ou alterar dados de outra; dê poderes de administrador a outras contas; ou afrouxe as regras do firestore.rules.
+3. Não apague nem renomeie campos já usados no banco; mantenha compatibilidade com os dados que os casais já salvaram.
+4. Se precisar mudar o firestore.rules, mostre o trecho antes e depois e explique o efeito na segurança.
+5. Teste antes de me entregar e diga o que testou e o que não deu para testar.
+6. Entregue só os arquivos que mudaram e diga onde vai cada um (pasta docs do GitHub ou regras do Firebase).
+7. Depois que eu publicar, lembre-me de marcar a sugestão como "feita" na central.`;
+}
+async function copyReq(list,btn){
+ const t=requestText(list);
+ try{await navigator.clipboard.writeText(t);const o=btn.textContent;btn.textContent='✓ COPIADO — cole no Claude';setTimeout(()=>btn.textContent=o,2500)}
+ catch(e){const w=document.createElement('textarea');w.value=t;w.style.cssText='width:100%;height:200px;margin-top:8px';btn.after(w);w.select()}
+}
+const STATUS={nova:'📨 nova',lida:'👀 lida',planejada:'🛠 vai entrar',feita:'🚀 feita',recusada:'✕ recusada'};
+function wireFeedback(){
+ const cpAll=document.getElementById('copyPlan');if(cpAll)cpAll.onclick=()=>copyReq(feedback.filter(f=>f.status==='planejada'),cpAll);
+ document.querySelectorAll('.fb').forEach(el=>{const id=el.dataset.id;
+  el.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>API.setFeedback(id,{status:b.dataset.st,updatedAt:Date.now()}).catch(e=>alert('Não salvou: '+(e.code||e))));
+  const c=el.querySelector('[data-copy]');c.onclick=()=>copyReq([feedback.find(x=>x.id===id)],c);
+  const r=el.querySelector('[data-reply]');r.onclick=()=>{const f=feedback.find(x=>x.id===id)||{};
+   const box=document.createElement('div');box.className='replybox';box.innerHTML=`<textarea maxlength="400" placeholder="Resposta que a pessoa vai ver no jogo">${esc(f.reply||'')}</textarea><button class="btn">ENVIAR RESPOSTA</button>`;
+   el.appendChild(box);r.disabled=true;box.querySelector('button').onclick=()=>API.setFeedback(id,{reply:box.querySelector('textarea').value.trim().slice(0,400),status:f.status==='nova'?'lida':f.status,updatedAt:Date.now()}).catch(e=>alert('Não salvou: '+(e.code||e)));};
+ });
+}
 function render(){
  if(denied){$('app').innerHTML=`<div class="msg"><h1>ACESSO RESTRITO</h1><p>Esta central é só do administrador.</p>
   <p style="margin-top:10px">Se você é o administrador, cole este UID nas regras do Firestore (linha <b>ADMIN_UID</b>) e publique:</p>
@@ -85,9 +136,15 @@ function render(){
   </div>
   <h2>👥 PESSOAS</h2><div class="scroll"><table><tr><th>STATUS</th><th>QUEM</th><th class="hide-sm">CASA</th><th>ÚLTIMO SINAL</th><th>INATIVO HÁ</th><th>HOJE</th><th class="hide-sm">7 DIAS</th><th class="hide-sm">APARELHO</th></tr>${rows||'<tr><td colspan="8">Ninguém acessou ainda.</td></tr>'}</table></div>
   <h2>🕒 ACESSOS (ÚLTIMOS 7 DIAS)</h2><div class="scroll"><table><tr><th>INÍCIO</th><th>QUEM</th><th>DURAÇÃO</th><th class="hide-sm">APARELHO</th></tr>${srows||'<tr><td colspan="4">Nenhum acesso nos últimos 7 dias.</td></tr>'}</table></div>
+  <h2>📨 SUGESTÕES RECEBIDAS (${feedback.filter(f=>f.status==='nova').length} novas)</h2>${feedback.some(f=>f.status==='planejada')?`<p style="margin-bottom:8px"><button class="btn" id="copyPlan">📋 COPIAR TODAS AS "VAI ENTRAR" (${feedback.filter(f=>f.status==='planejada').length})</button></p>`:''}<div class="scroll">${feedback.length?feedback.map(f=>`<div class="fb" data-id="${esc(f.id)}">
+   <div class="fbh"><b>${esc(f.name||'—')}</b> <small>${esc(f.houseName||'')} · ${esc(f.email||'')} · ${when(f.createdAt)}</small><span class="tag t-${esc(f.status)}">${esc(STATUS[f.status]||f.status)}</span></div>
+   <p>${esc(f.text)}</p>${risks(f.text).length?`<p class="risk">⚠ Atenção: ${risks(f.text).map(esc).join(' · ')}</p>`:''}${f.reply?`<p class="rep">💬 ${esc(f.reply)}</p>`:''}
+   <div class="fba">${Object.keys(STATUS).map(k=>`<button class="chip ${k===f.status?'on':''}" data-st="${k}">${STATUS[k]}</button>`).join('')}
+   <button class="chip" data-reply="1">💬 responder</button><button class="btn cp" data-copy="1">📋 COPIAR PARA APLICAR</button></div></div>`).join(''):'<p style="color:var(--dim)">Nenhuma sugestão ainda.</p>'}</div>
   <h2>🏠 CASAS</h2><div class="scroll"><table><tr><th>JOGO</th><th>JOGADORES</th><th>CRIADA EM</th></tr>${hrows||'<tr><td colspan="3">Nenhuma casa ainda.</td></tr>'}</table></div>
   <p style="color:var(--dim);margin-top:14px;font-size:16px">Online = app aberto na tela nos últimos 3 min · Segundo plano = app aberto mas fora da tela · Tempo ativo = tempo com o app visível.</p>`;
  $('out').onclick=()=>API.signOut();
+ wireFeedback();
 }
 (async()=>{
  API=await window.ADMINReady;let unsub=[];
@@ -99,6 +156,7 @@ function render(){
   unsub.push(API.watchPresence(l=>{presence=l;render()},deny));
   unsub.push(API.watchSessions(Date.now()-7*DAY,l=>{sessions=l;render()},deny));
   unsub.push(API.watchHouses(l=>{houses=l;render()},deny));
+  if(API.watchFeedback)unsub.push(API.watchFeedback(l=>{feedback=l;if(!document.querySelector('.replybox textarea:focus'))render()},()=>{}));
  });
  setInterval(()=>{if(user&&!denied&&presence.length)render()},30000);
 })();

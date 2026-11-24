@@ -10,13 +10,41 @@ service cloud.firestore {
     function houseData(h) { return get(/databases/$(database)/documents/houses/$(h)).data; }
     function isMember(h) { return signedIn() && request.auth.uid in houseData(h).members; }
 
+    // ADMIN_UID: troque pelo seu UID (a página admin.html mostra qual é).
+    function isAdmin() { return signedIn() && request.auth.uid == 'cJlpKeeaNhSeIBnHhqItvCTGAxx2'; }
+
+    // Presença: cada pessoa grava só a própria; só o administrador lê.
+    match /presence/{uid} {
+      allow write: if signedIn() && request.auth.uid == uid;
+      allow read: if isAdmin();
+    }
+
+    // Sugestões enviadas ao administrador: quem envia vê só as suas; o administrador lê e responde.
+    match /feedback/{id} {
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'nova'
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 600;
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    // Sessões de uso: cada pessoa grava só as suas; só o administrador lê.
+    match /sessions/{sid} {
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn() && resource.data.uid == request.auth.uid && request.resource.data.uid == request.auth.uid;
+      allow read: if isAdmin();
+    }
+
     // Cada pessoa guarda só "qual é a minha casa".
     match /users/{uid} {
       allow read, write: if signedIn() && request.auth.uid == uid;
     }
 
     match /houses/{h} {
-      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow read: if (signedIn() && request.auth.uid in resource.data.members) || isAdmin();
 
       allow create: if signedIn()
         && request.resource.data.owner == request.auth.uid
