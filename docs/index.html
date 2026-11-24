@@ -648,8 +648,10 @@ function extractSVG(t){
 function openDraw(c){
  const id=c.id||c.k,prompt=drawPrompt(c.n);
  modal(`<h2>🎨 ÍCONE: ${esc(c.n).toUpperCase()}</h2>
-  <p class="hint sm">1. Copie o pedido e cole no Claude (ou abra direto). 2. Copie o código que ele devolver. 3. Cole aqui embaixo.</p>
-  <div class="acts"><button class="btn" id="dCp">📋 COPIAR PEDIDO</button><a class="btn ghost" id="dOpen" href="https://claude.ai/new?q=${encodeURIComponent(prompt)}" target="_blank" rel="noopener">ABRIR O CLAUDE ↗</a></div>
+    <div class="acts"><button class="btn" id="dAuto">✨ DESENHAR AUTOMÁTICO</button></div>
+  <p class="hint sm" id="dLeft">Desenho grátis feito pelo Gemini (Google). Só o nome da carta é enviado.</p>
+  <p class="hint sm" style="opacity:.7">— ou, do jeito manual —</p>
+  <div class="acts"><button class="btn ghost" id="dCp">📋 COPIAR PEDIDO</button><a class="btn ghost" id="dOpen" href="https://claude.ai/new?q=${encodeURIComponent(prompt)}" target="_blank" rel="noopener">ABRIR O CLAUDE ↗</a></div>
   <textarea id="dSvg" rows="5" placeholder="Cole aqui o código <svg>…</svg> que o Claude devolveu"></textarea>
   <div class="avprev"><div style="width:110px;height:110px;border:3px solid #000;border-radius:8px;background:#fff;padding:6px" id="dPrev"></div></div>
   <p class="hint" id="dMsg"></p>
@@ -660,6 +662,26 @@ function openDraw(c){
   $('dPrev').innerHTML=clean?`<svg viewBox="0 0 64 64" width="100%" height="100%">${clean}</svg>`:'';
   $('dSave').disabled=!(clean&&clean.length>40);$('dMsg').textContent=clean?'':'Ainda não reconheci um desenho válido.'};
  $('dX').onclick=closeModal;
+ if(FB&&FB.aiLeft&&houseId)FB.aiLeft(houseId).then(n=>{if($('dLeft'))$('dLeft').textContent=`Desenho grátis feito pelo Gemini (Google). Restam ${Math.max(0,n)} hoje nesta casa. Só o nome da carta é enviado.`}).catch(()=>{});
+ $('dAuto').onclick=async()=>{
+  const b=$('dAuto');b.disabled=true;b.textContent='✨ DESENHANDO…';$('dMsg').textContent='Isso leva alguns segundos.';
+  try{
+   let ok='';
+   for(let i=0;i<2&&!ok;i++){const t=await FB.aiDraw(houseId,prompt);const cl=cleanSVG(extractSVG(t));if(cl&&cl.length>40)ok=cl}
+   if(!ok)throw{code:'desenho-invalido'};
+   $('dSvg').value=`<svg viewBox="0 0 64 64">${ok}</svg>`;$('dSvg').oninput();
+   $('dMsg').textContent='Pronto! Gostou? Toque em SALVAR ÍCONE. (Ou desenhe de novo.)';
+  }catch(e){
+   const c=e&&e.code||'';
+   $('dMsg').textContent=c==='limite-diario'?'Acabaram os desenhos automáticos de hoje nesta casa. Amanhã tem mais — ou use o jeito manual abaixo.'
+    :c==='desenho-invalido'?'O desenho veio estranho. Tente de novo ou use o jeito manual.'
+    :/quota|exhausted|429/i.test(String(e&&e.message))?'A cota grátis do Gemini acabou por hoje. Use o jeito manual abaixo.'
+    :/app.?check|recaptcha|attestation|403/i.test(String(e&&e.message))?'O desenho automático ainda está sendo ligado. Use o jeito manual por enquanto.'
+    :'Não deu para desenhar agora. Tente de novo ou use o jeito manual.';
+   console.warn('aiDraw',e);
+  }
+  if($('dAuto')){b.disabled=false;b.textContent='✨ DESENHAR DE NOVO'}
+ };
  $('dSave').onclick=async()=>{
   extraCards[id]={...(extraCards[id]||{}),svg:clean};render();
   try{await db.collection('cards').doc(id).set({...(extraCards[id]||{}),svg:clean,name:(extraCards[id]||{}).name||c.n,xp:(extraCards[id]||{}).xp||c.xp});

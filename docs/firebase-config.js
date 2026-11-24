@@ -9,3 +9,7 @@ export const firebaseConfig = {
   messagingSenderId: "111781861411",
   appId: "1:111781861411:web:38264259478ff6db19f996"
 };
+
+// Chave PÚBLICA do reCAPTCHA v3 (App Check). Protege a cota do Gemini contra uso fora deste site.
+// A chave SECRETA nunca entra aqui: ela fica só no console do Firebase (App Check).
+export const recaptchaSiteKey = "6Lfw4DAuAAAAAIXPMjFDApDYiZTiSuONVyVajVPT";

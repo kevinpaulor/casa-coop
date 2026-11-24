@@ -1,6 +1,6 @@
 // Casa Co-op — © 2026 Kevin Paulo · Licença MIT
 // Ponte entre o jogo e o Firebase (login com Google + banco Firestore em tempo real).
-import { firebaseConfig } from './firebase-config.js';
+import { firebaseConfig, recaptchaSiteKey } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut,
   sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -19,6 +19,24 @@ if (notConfigured) {
 }
 
 const app = initializeApp(firebaseConfig);
+
+const AI_V = '13.4.0', AI_DAILY = 8;
+let _aiModel = null;
+async function aiModel() {
+  if (_aiModel) return _aiModel;
+  if (!recaptchaSiteKey) { const e = new Error('sem chave'); e.code = 'ia-desligada'; throw e; }
+  const base = `https://www.gstatic.com/firebasejs/${AI_V}/`;
+  const [{ initializeApp: initAI }, { initializeAppCheck, ReCaptchaV3Provider }, { getAI, getGenerativeModel, GoogleAIBackend }] =
+    await Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-app-check.js'), import(base + 'firebase-ai.js')]);
+  const aiApp = initAI(firebaseConfig, 'casa-coop-ia');
+  initializeAppCheck(aiApp, { provider: new ReCaptchaV3Provider(recaptchaSiteKey), isTokenAutoRefreshEnabled: true });
+  const ai = getAI(aiApp, { backend: new GoogleAIBackend() });
+  const cfg = { generationConfig: { temperature: 0.8, maxOutputTokens: 4000 } };
+  _aiModel = { main: getGenerativeModel(ai, { model: 'gemini-3.5-flash-lite', ...cfg }),
+               backup: getGenerativeModel(ai, { model: 'gemini-3.1-flash-lite', ...cfg }) };
+  return _aiModel;
+}
+
 const auth = getAuth(app);
 let fs;
 try {
@@ -138,6 +156,22 @@ const FB = {
     return onSnapshot(query(collection(fs, 'feedback'), where('uid', '==', auth.currentUser.uid)),
       s => next(s.docs.map(d => ({ id: d.id, ...d.data() }))), err);
   },
+  // ===== Desenho automático de ícones (Gemini grátis via Firebase AI Logic + App Check) =====
+  // Carregado só quando alguém pede um desenho. Usa um "app" separado só para a IA.
+  // Limite: AI_DAILY desenhos por casa por dia (contador em houses/{h}/events/ai-AAAA-MM-DD).
+  async aiDraw(h, prompt) {
+    const day = new Date().toISOString().slice(0, 10), qref = doc(fs, 'houses', h, 'events', 'ai-' + day);
+    const qs = await getDoc(qref), used = qs.exists() ? (qs.data().n || 0) : 0;
+    if (used >= AI_DAILY) { const e = new Error('limite'); e.code = 'limite-diario'; throw e; }
+    const model = await aiModel();
+    let r;
+    try { r = await model.main.generateContent(prompt); }
+    catch (e) { if (/not.?found|404/i.test(String(e && e.message))) r = await model.backup.generateContent(prompt); else throw e; }
+    await setDoc(qref, { n: used + 1, day }, { merge: true });
+    return r.response.text();
+  },
+  aiLeft: async h => { const s = await getDoc(doc(fs, 'houses', h, 'events', 'ai-' + new Date().toISOString().slice(0, 10)));
+    return AI_DAILY - (s.exists() ? (s.data().n || 0) : 0); },
   watchHouse(h, next, err) { return onSnapshot(doc(fs, 'houses', h), s => next(s.exists() ? s.data() : null), err); },
   updateHouse(h, patch) { return updateDoc(doc(fs, 'houses', h), patch); },
   // Mesmo formato que o jogo já usa: db.collection('tasks').doc(id).set(...), .onSnapshot(...), .orderBy().limit().onSnapshot()
