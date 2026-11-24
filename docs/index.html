@@ -203,7 +203,7 @@ header{display:flex;align-items:center;justify-content:space-between;gap:8px;mar
 <div class="wrap" id="app">
   <header>
     <div class="logo" id="logo"></div>
-    <div style="display:flex;gap:8px;align-items:center"><button class="chip" id="logBtn" title="Registro de ações">📜 LOG</button><div class="me" id="meBox"></div></div>
+    <div style="display:flex;gap:8px;align-items:center"><button class="chip" id="installBtn" title="Instalar o app no aparelho">📲 BAIXAR APP</button><button class="chip" id="logBtn" title="Registro de ações">📜 LOG</button><div class="me" id="meBox"></div></div>
   </header>
   <div class="status-line" id="statusLine">Conectando…</div>
 
@@ -812,6 +812,26 @@ function renderMe(){
 }
 function setTab(t){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));view=t;render()}
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{beep(SFX.tab,{cut:true});setTab(b.dataset.tab)});
+/* ---- instalar como app (PWA) ---- */
+let installEvt=null;
+const isStandalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e});
+window.addEventListener('appinstalled',()=>{installEvt=null;const b=$('installBtn');if(b)b.hidden=true});
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+function openInstall(){
+ if(isStandalone()){modal(`<h2>📲 APP</h2><p class="hint">Você já está usando o app instalado. ✔</p><div class="acts"><button class="btn ghost" onclick="closeModal()">OK</button></div>`);return}
+ if(installEvt){installEvt.prompt();installEvt.userChoice.finally(()=>{installEvt=null});return}
+ const ua=navigator.userAgent,ios=/iPhone|iPad|iPod/.test(ua)||(/Mac/.test(ua)&&navigator.maxTouchPoints>1),
+  iosOther=ios&&/CriOS|FxiOS|EdgiOS/.test(ua),inApp=/Instagram|FBAN|FBAV|WhatsApp|Line\//.test(ua);
+ let how;
+ if(inApp)how=`<p class="hint">Você abriu pelo navegador de dentro de outro app (Instagram/WhatsApp). Toque nos <b>⋯</b> e escolha <b>Abrir no navegador</b> (Safari ou Chrome), depois toque em 📲 BAIXAR APP de novo.</p>`;
+ else if(ios)how=`<p class="hint"><b>iPhone/iPad:</b></p><p class="hint">1. Toque em <b>Compartilhar</b> (o quadrado com a setinha ⬆️)${iosOther?' — no Chrome ele fica na barra de endereço':' — na barra de baixo do Safari'}.<br>2. Role e toque em <b>Adicionar à Tela de Início</b>.<br>3. Toque em <b>Adicionar</b>.</p>`;
+ else if(/Android/.test(ua))how=`<p class="hint"><b>Android:</b></p><p class="hint">1. Toque nos <b>⋮</b> (canto de cima do Chrome).<br>2. Toque em <b>Instalar app</b> ou <b>Adicionar à tela inicial</b>.<br>3. Confirme.</p>`;
+ else how=`<p class="hint"><b>Computador (Chrome/Edge):</b></p><p class="hint">Clique no ícone de instalar <b>⊕</b> no fim da barra de endereço, ou no menu <b>⋮</b> → <b>Transmitir, salvar e compartilhar</b> → <b>Instalar página como app</b>.</p>`;
+ modal(`<h2>📲 BAIXAR APP</h2>${how}<p class="hint" style="font-size:14px;opacity:.8">O ícone do Casa Co-op aparece na tela do aparelho e abre em tela cheia, como um app. Seu progresso continua o mesmo.</p><div class="acts"><button class="btn ghost" onclick="closeModal()">FECHAR</button></div>`);
+}
+if(isStandalone()){const b=$('installBtn');if(b)b.hidden=true}
+$('installBtn').onclick=()=>{try{beep(SFX.tab)}catch(e){}openInstall()};
 $('logBtn').onclick=()=>{beep(SFX.tab);openLog()};
 $('soundBtn').onclick=e=>{sound=!sound;e.target.textContent='♪ SOM: '+(sound?'ON':'OFF')};
 
@@ -873,7 +893,7 @@ function colorPick(id,sel){return `<div class="cpick" id="${id}">${COLORS.map(c=
 function wirePick(id){const el=$(id);el.querySelectorAll('button').forEach(b=>b.onclick=()=>{el.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));el.dataset.v=b.dataset.c});el.dataset.v=(el.querySelector('.on')||el.querySelector('button')).dataset.c}
 
 function showSignIn(mode){
- const foot=`<p class="hint" id="gMsg"></p><p class="hint" style="font-size:15px">Criado por Kevin Paulo · <a href="https://www.instagram.com/arkev.arq/" target="_blank" rel="noopener" style="color:var(--gold)">@Arkev.arq</a> · <a href="politica.html" style="color:var(--dim)">Privacidade</a></p>`;
+ const foot=`<p class="hint" id="gMsg"></p><p class="hint" style="font-size:15px">Criado por Kevin Paulo · <a href="https://www.instagram.com/arkev.arq/" target="_blank" rel="noopener" style="color:var(--gold)">@Arkev.arq</a> · <a href="politica.html" style="color:var(--dim)">Privacidade</a></p><p style="text-align:center"><button class="chip" onclick="openInstall()">📲 BAIXAR APP</button></p>`;
  const back='<div class="acts"><button class="chip" id="gBack">← voltar</button></div>';
  const msg=t=>{$('gMsg').textContent=t};
  if(mode==='link'){
