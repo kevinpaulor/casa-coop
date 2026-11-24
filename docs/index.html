@@ -494,7 +494,7 @@ function openAssign(c){
  modal(`<h2>${esc(c.n).toUpperCase()}<br><span style="color:#fff">★ ${c.xp} XP</span></h2><div style="width:90px;margin:0 auto">${svg(c.k,'')}</div>
   <p class="hint" style="margin-top:8px">Quem vai fazer?</p>
   <div class="acts"><button class="btn k" id="aK">1P ${esc(NAME.p1.toUpperCase())}</button><button class="btn j" id="aJ">2P ${esc(NAME.p2.toUpperCase())}</button></div>
-  <div class="acts"><button class="chip" id="aD">🎨 DESENHAR ÍCONE COM CLAUDE</button></div>
+  <div class="acts"><button class="chip" id="aD">🎨 DESENHAR ÍCONE</button></div>
   <div class="acts"><button class="btn ghost" id="aX">CANCELAR</button></div>`);
  $('aD').onclick=()=>openDraw(c);
  $('aK').onclick=e=>{addTask(c,'p1',e);closeModal()};$('aJ').onclick=e=>{addTask(c,'p2',e);closeModal()};$('aX').onclick=closeModal;
