@@ -2,7 +2,9 @@
 // Ponte entre o jogo e o Firebase (login com Google + banco Firestore em tempo real).
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut }
+import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut,
+  sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  sendPasswordResetEmail, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, getDoc, setDoc, updateDoc,
   deleteDoc, onSnapshot, query, orderBy, limit, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -41,9 +43,9 @@ async function beat(state) {
   tick();
   const now = Date.now(), dev = device();
   try {
-    await setDoc(doc(fs, 'presence', u.uid), { uid: u.uid, name: u.displayName || '', email: u.email || '', state, lastSeen: now,
+    await setDoc(doc(fs, 'presence', u.uid), { uid: u.uid, name: u.displayName || info.player || '', email: u.email || '', anon: !!u.isAnonymous, state, lastSeen: now,
       device: dev, sessionId: sid, ...info }, { merge: true });
-    await setDoc(doc(fs, 'sessions', sid), { uid: u.uid, name: u.displayName || '', start: startAt, last: now, activeMs,
+    await setDoc(doc(fs, 'sessions', sid), { uid: u.uid, name: u.displayName || info.player || '', start: startAt, last: now, activeMs,
       device: dev, houseName: info.houseName || '', player: info.player || '' }, { merge: true });
   } catch (e) { /* sem conexão: tenta de novo no próximo pulso */ }
 }
@@ -56,6 +58,7 @@ function onVis() {
 document.addEventListener('visibilitychange', onVis);
 addEventListener('pagehide', () => { if (sid) beat('offline'); });
 
+const POPUP_FALLBACK = ['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/cancelled-popup-request'];
 const FB = {
   user: null,
   onAuth(cb) { onAuthStateChanged(auth, u => { FB.user = u; cb(u); }); },
@@ -64,10 +67,38 @@ const FB = {
     p.setCustomParameters({ prompt: 'select_account' });
     try { await signInWithPopup(auth, p); }
     catch (e) {
-      if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/cancelled-popup-request'].includes(e.code))
-        return signInWithRedirect(auth, p);
+      if (POPUP_FALLBACK.includes(e.code)) return signInWithRedirect(auth, p);
       throw e;
     }
+  },
+  // Link mágico por e-mail (sem senha)
+  async sendEmailLink(email) {
+    await sendSignInLinkToEmail(auth, email, { url: location.origin + location.pathname, handleCodeInApp: true });
+    try { localStorage.setItem('cc-email-link', email); } catch (e) {}
+  },
+  isEmailLink() { return isSignInWithEmailLink(auth, location.href); },
+  savedEmail() { try { return localStorage.getItem('cc-email-link') || ''; } catch (e) { return ''; } },
+  async finishEmailLink(email) {
+    await signInWithEmailLink(auth, email, location.href);
+    try { localStorage.removeItem('cc-email-link'); } catch (e) {}
+    history.replaceState(null, '', location.pathname);
+  },
+  // E-mail e senha
+  signInPassword(email, pw) { return signInWithEmailAndPassword(auth, email, pw); },
+  signUpPassword(email, pw) { return createUserWithEmailAndPassword(auth, email, pw); },
+  resetPassword(email) { return sendPasswordResetEmail(auth, email); },
+  // Sem conta (anônimo) + salvar depois
+  signInAnon() { return signInAnonymously(auth); },
+  isAnon() { return !!(auth.currentUser && auth.currentUser.isAnonymous); },
+  async linkGoogle() {
+    const p = new GoogleAuthProvider();
+    try { await linkWithPopup(auth.currentUser, p); }
+    catch (e) { if (POPUP_FALLBACK.includes(e.code)) return linkWithRedirect(auth.currentUser, p); throw e; }
+    await auth.currentUser.reload(); FB.user = auth.currentUser;
+  },
+  async linkPassword(email, pw) {
+    await linkWithCredential(auth.currentUser, EmailAuthProvider.credential(email, pw));
+    await auth.currentUser.reload(); FB.user = auth.currentUser;
   },
   async signOut() { try { await beat('offline'); } catch (e) {} stopTrack(); return signOut(auth); },
   async myHouse() {

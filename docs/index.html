@@ -754,23 +754,76 @@ let FB=null,houseId=null,house=null,unsubs=[],synced=false;
 function updateStatus(){
  const sl=$('statusLine');
  if(house&&!(house.p2&&house.p2.uid)){sl.innerHTML=`Falta ${esc(NAME.p2)} entrar — <button class="chip" id="invNow">📨 CONVIDAR</button>`;$('invNow').onclick=openSettings;return}
- if(synced)sl.textContent='● Sincronizado com '+(me?NAME[me==='p1'?'p2':'p1']:'o parceiro');
+ if(synced){sl.textContent='● Sincronizado com '+(me?NAME[me==='p1'?'p2':'p1']:'o parceiro');
+  if(FB&&FB.isAnon&&FB.isAnon()){sl.insertAdjacentHTML('beforeend',' · <button class="chip" id="anonSave" style="color:var(--orange);border-color:var(--orange)">⚠ SEM CONTA — SALVAR</button>');$('anonSave').onclick=openSettings}}
 }
 const randCode=n=>Array.from(crypto.getRandomValues(new Uint8Array(n)),x=>'abcdefghjkmnpqrstuvwxyz23456789'[x%31]).join('');
 const COLORS=['#3ec5ff','#ff5fa2','#4dff88','#ffd23f','#c86bff','#ff9f1c'];
 function gate(html){$('gate').innerHTML=`<div class="gbox"><div class="logo" style="font-size:22px;margin-bottom:14px">CASA <span>CO-OP</span></div>${html}</div>`;$('gate').hidden=false}
 function ungate(){$('gate').hidden=true}
-function parseInvite(){const m=(location.hash||'').match(/^#convite-([A-Za-z0-9]+)-([a-z0-9]+)$/);return m?{h:m[1],c:m[2]}:null}
+function parseInvite(){
+ const m=(location.hash||'').match(/^#convite-([A-Za-z0-9]+)-([a-z0-9]+)$/);
+ if(m){try{localStorage.setItem('cc-invite',m[1]+'-'+m[2])}catch(e){}return{h:m[1],c:m[2]}}
+ let v='';try{v=localStorage.getItem('cc-invite')||''}catch(e){}
+ const k=v.match(/^([A-Za-z0-9]+)-([a-z0-9]+)$/);return k?{h:k[1],c:k[2]}:null}
+function clearInvite(){try{localStorage.removeItem('cc-invite')}catch(e){}if(location.hash)history.replaceState(null,'',location.pathname)}
+const AUTH_ERR={'auth/invalid-email':'E-mail inválido.','auth/missing-email':'Digite o e-mail.','auth/invalid-credential':'E-mail ou senha incorretos.',
+ 'auth/wrong-password':'E-mail ou senha incorretos.','auth/user-not-found':'Não existe conta com esse e-mail. Toque em CRIAR CONTA.',
+ 'auth/email-already-in-use':'Esse e-mail já tem conta. Toque em ENTRAR.','auth/weak-password':'A senha precisa ter pelo menos 6 caracteres.',
+ 'auth/credential-already-in-use':'Essa conta já está em uso por outro jogador.','auth/provider-already-linked':'Sua conta já está salva.',
+ 'auth/operation-not-allowed':'Esse tipo de login ainda não foi ativado no Firebase.','auth/popup-closed-by-user':'Login cancelado.',
+ 'auth/too-many-requests':'Muitas tentativas. Espere um pouco.','auth/invalid-action-code':'Esse link expirou ou já foi usado. Peça outro.',
+ 'auth/network-request-failed':'Sem internet. Tente de novo.'};
+const authMsg=e=>AUTH_ERR[e&&e.code]||('Não deu certo ('+(e&&e.code||'erro')+'). Tente de novo.');
 function inviteLink(){return location.origin+location.pathname+'#convite-'+houseId+'-'+house.inviteCode}
 function colorPick(id,sel){return `<div class="cpick" id="${id}">${COLORS.map(c=>`<button type="button" data-c="${c}" style="background:${c}" class="${c===sel?'on':''}"></button>`).join('')}</div>`}
 function wirePick(id){const el=$(id);el.querySelectorAll('button').forEach(b=>b.onclick=()=>{el.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));el.dataset.v=b.dataset.c});el.dataset.v=(el.querySelector('.on')||el.querySelector('button')).dataset.c}
 
-function showSignIn(){
- gate(`<p class="hint">Dividam as tarefas da casa num jogo arcade — cartas com XP, corrida de foguetes e placar em tempo real para os dois.</p>
-  <div class="acts"><button class="btn" id="gIn">ENTRAR COM GOOGLE</button></div>
-  ${parseInvite()?'<p class="hint" style="color:var(--gold)">Você recebeu um convite! Entre para aceitar.</p>':''}
-  <p class="hint" id="gMsg"></p><p class="hint" style="font-size:15px">Criado por Kevin Paulo · <a href="https://www.instagram.com/arkev.arq/" target="_blank" rel="noopener" style="color:var(--gold)">@Arkev.arq</a> · <a href="politica.html" style="color:var(--dim)">Privacidade</a></p>`);
- $('gIn').onclick=async()=>{$('gMsg').textContent='Abrindo login…';try{await FB.signIn()}catch(e){$('gMsg').textContent='Não deu para entrar: '+(e&&e.code||'erro')+'. Tente de novo.'}};
+function showSignIn(mode){
+ const foot=`<p class="hint" id="gMsg"></p><p class="hint" style="font-size:15px">Criado por Kevin Paulo · <a href="https://www.instagram.com/arkev.arq/" target="_blank" rel="noopener" style="color:var(--gold)">@Arkev.arq</a> · <a href="politica.html" style="color:var(--dim)">Privacidade</a></p>`;
+ const back='<div class="acts"><button class="chip" id="gBack">← voltar</button></div>';
+ const msg=t=>{$('gMsg').textContent=t};
+ if(mode==='link'){
+  gate(`<h2>ENTRAR COM LINK NO E-MAIL</h2><p class="hint">Sem senha: você recebe um link e toca nele para entrar.</p>
+   <input id="gEm" type="email" autocomplete="email" placeholder="seu@email.com"><div class="acts"><button class="btn" id="gGo">ENVIAR LINK</button></div>${back}${foot}`);
+  $('gGo').onclick=async()=>{const em=$('gEm').value.trim();if(!em){msg('Digite o e-mail.');return}
+   $('gGo').disabled=true;msg('Enviando…');
+   try{await FB.sendEmailLink(em);gate(`<h2>CONFIRA SEU E-MAIL</h2><p class="hint">Mandamos um link para <b>${esc(em)}</b>. Abra o e-mail <b>neste mesmo aparelho</b> e toque no link. Se não chegar em 2 minutos, olhe o spam.</p>${back}${foot}`);$('gBack').onclick=()=>showSignIn()}
+   catch(e){$('gGo').disabled=false;msg(authMsg(e))}};
+ }else if(mode==='senha'){
+  gate(`<h2>E-MAIL E SENHA</h2>
+   <input id="gEm" type="email" autocomplete="email" placeholder="seu@email.com"><input id="gPw" type="password" autocomplete="current-password" placeholder="senha (mín. 6 caracteres)">
+   <div class="acts"><button class="btn" id="gLog">ENTRAR</button><button class="btn ghost" id="gNew">CRIAR CONTA</button></div>
+   <div class="acts"><button class="chip" id="gFor">esqueci a senha</button></div>${back}${foot}`);
+  const go=async f=>{const em=$('gEm').value.trim(),pw=$('gPw').value;if(!em||!pw){msg('Preencha e-mail e senha.');return}msg('Entrando…');try{await f(em,pw)}catch(e){msg(authMsg(e))}};
+  $('gLog').onclick=()=>go(FB.signInPassword);$('gNew').onclick=()=>go(FB.signUpPassword);
+  $('gFor').onclick=async()=>{const em=$('gEm').value.trim();if(!em){msg('Digite o e-mail acima primeiro.');return}
+   try{await FB.resetPassword(em);msg('Enviamos um e-mail para trocar a senha.')}catch(e){msg(authMsg(e))}};
+ }else if(mode==='anon'){
+  gate(`<h2>JOGAR SEM CONTA</h2><p class="hint">Você entra direto, sem informar nada.</p>
+   <p class="hint" style="color:var(--orange)">⚠ Sua casa fica presa a este aparelho e navegador. Se trocar de celular ou limpar o navegador, perde o acesso. Dá para salvar a conta depois em ⚙ casa.</p>
+   <div class="acts"><button class="btn" id="gGo">ENTENDI, ENTRAR</button></div>${back}${foot}`);
+  $('gGo').onclick=async()=>{msg('Entrando…');try{await FB.signInAnon()}catch(e){msg(authMsg(e))}};
+ }else{
+  gate(`<p class="hint">Dividam as tarefas da casa num jogo arcade — cartas com XP, corrida de foguetes e placar em tempo real para os dois.</p>
+   ${parseInvite()?'<p class="hint" style="color:var(--gold)">Você recebeu um convite! Entre para aceitar.</p>':''}
+   <div class="acts"><button class="btn" id="gIn" style="font-size:11px;padding:14px 18px">ENTRAR COM GOOGLE</button></div>
+   <p class="hint" style="margin-top:14px">ou entre de outro jeito:</p>
+   <div class="acts" style="flex-direction:column;align-items:center;gap:8px">
+    <button class="chip" id="gLink">✉ LINK NO E-MAIL (SEM SENHA)</button>
+    <button class="chip" id="gPass">🔑 E-MAIL E SENHA</button>
+    <button class="chip" id="gAnon">👤 JOGAR SEM CONTA</button></div>${foot}`);
+  $('gIn').onclick=async()=>{msg('Abrindo login…');try{await FB.signIn()}catch(e){msg(authMsg(e))}};
+  $('gLink').onclick=()=>showSignIn('link');$('gPass').onclick=()=>showSignIn('senha');$('gAnon').onclick=()=>showSignIn('anon');
+  return;
+ }
+ const gb=$('gBack');if(gb)gb.onclick=()=>showSignIn();
+}
+function showFinishLink(){
+ gate(`<h2>CONFIRME SEU E-MAIL</h2><p class="hint">Digite o e-mail para onde o link foi enviado:</p>
+  <input id="gEm" type="email" autocomplete="email" placeholder="seu@email.com"><div class="acts"><button class="btn" id="gGo">ENTRAR</button></div><p class="hint" id="gMsg"></p>`);
+ $('gGo').onclick=async()=>{const em=$('gEm').value.trim();if(!em)return;$('gMsg').textContent='Entrando…';
+  try{await FB.finishEmailLink(em)}catch(e){$('gMsg').textContent=authMsg(e)}};
 }
 function showCreate(){
  const inv=parseInvite();
@@ -788,7 +841,7 @@ function showCreate(){
   const p1=$('hP1').value.trim(),p2=$('hP2').value.trim();if(!p1||!p2){$('gMsg').textContent='Preencha os dois nomes.';return}
   $('hGo').disabled=true;$('gMsg').textContent='Criando…';
   try{houseId=await FB.createHouse({appName:$('hApp').value.trim()||'Casa Co-op',inviteCode:randCode(10),
-    p1:{name:p1,color:$('hC1').dataset.v},p2:{name:p2,color:$('hC2').dataset.v}});enterHouse()}
+    p1:{name:p1,color:$('hC1').dataset.v},p2:{name:p2,color:$('hC2').dataset.v}});clearInvite();enterHouse()}
   catch(e){$('hGo').disabled=false;$('gMsg').textContent='Não deu certo ('+(e&&e.code||'erro')+'). Tente de novo.'}
  };
  $('hJoin').onclick=()=>{const m=$('hInv').value.match(/convite-([A-Za-z0-9]+)-([a-z0-9]+)/);if(!m){$('gMsg').textContent='Link inválido.';return}location.hash='convite-'+m[1]+'-'+m[2];joinFlow()};
@@ -800,14 +853,21 @@ async function joinFlow(){
   <div class="acts"><button class="btn" id="jGo">✓ ACEITAR CONVITE</button></div><p class="hint" id="gMsg"></p>`);
  $('jGo').onclick=async()=>{
   $('jGo').disabled=true;$('gMsg').textContent='Entrando…';
-  try{await FB.joinHouse(inv.h,inv.c,$('jN').value.trim());history.replaceState(null,'',location.pathname);houseId=inv.h;enterHouse()}
+  try{await FB.joinHouse(inv.h,inv.c,$('jN').value.trim());clearInvite();houseId=inv.h;enterHouse()}
   catch(e){$('jGo').disabled=false;$('gMsg').textContent=e&&e.code==='permission-denied'?'Convite inválido ou a casa já tem dois jogadores.':'Não deu certo ('+(e&&e.code||'erro')+').'}
  };
 }
+let anonOutArmed=false;
+function confirmAnonOut(){if(anonOutArmed)return true;anonOutArmed=true;$('sMsg').textContent='⚠ Sem conta, sair = perder o acesso à casa. Toque em "sair" de novo para confirmar.';setTimeout(()=>anonOutArmed=false,6000);return false}
 function openSettings(){
  const joined=!!(house&&house.p2&&house.p2.uid);
  modal(`<h2>⚙ ${esc(CONFIG.appName.toUpperCase())}</h2>
   ${joined?'':`<p class="hint">Convide ${esc(NAME.p2)} com este link:</p><input id="sLink" readonly value="${esc(inviteLink())}"><div class="acts"><button class="btn" id="sCopy">📋 COPIAR CONVITE</button>${navigator.share?'<button class="btn ghost" id="sShare">ENVIAR…</button>':''}</div>`}
+  ${FB.isAnon&&FB.isAnon()?`<div style="border:2px dashed var(--orange);padding:10px;margin:10px 0"><p class="hint" style="color:var(--orange)">⚠ Você está jogando sem conta. Salve para não perder a casa se trocar de aparelho:</p>
+   <div class="acts"><button class="btn" id="aG">SALVAR COM GOOGLE</button></div>
+   <input id="aEm" type="email" placeholder="ou e-mail" style="width:100%;font-family:'VT323';font-size:20px;background:#000;color:#fff;border:2px solid var(--line);padding:8px;margin-top:6px">
+   <input id="aPw" type="password" placeholder="senha (mín. 6)" style="width:100%;font-family:'VT323';font-size:20px;background:#000;color:#fff;border:2px solid var(--line);padding:8px;margin-top:6px">
+   <div class="acts"><button class="btn ghost" id="aE">SALVAR COM E-MAIL</button></div></div>`:''}
   <p class="hint" style="margin-top:10px">Nomes e cores</p>
   <input id="sApp" maxlength="24" value="${esc(CONFIG.appName)}">
   <input id="sP1" maxlength="16" value="${esc(NAME.p1)}">${colorPick('sC1',PCOL.p1)}
@@ -818,7 +878,13 @@ function openSettings(){
  wirePick('sC1');wirePick('sC2');
  if(!joined){$('sCopy').onclick=async()=>{try{await navigator.clipboard.writeText(inviteLink());$('sMsg').textContent='Link copiado! Mande para '+NAME.p2+'.'}catch(e){$('sLink').select();$('sMsg').textContent='Selecionado — copie pelo celular.'}};
   const sh=$('sShare');if(sh)sh.onclick=()=>navigator.share({title:CONFIG.appName,text:'Bora dividir as tarefas da casa? Entra aqui:',url:inviteLink()}).catch(()=>{});}
- $('sX').onclick=closeModal;$('sOut').onclick=()=>{closeModal();FB.signOut()};
+ $('sX').onclick=closeModal;$('sOut').onclick=()=>{if(FB.isAnon&&FB.isAnon()&&!confirmAnonOut())return;closeModal();FB.signOut()};
+ const ag=$('aG');if(ag){
+  const done=()=>{closeModal();banner('CONTA SALVA!','AGORA DÁ PRA TROCAR DE APARELHO');updateStatus()};
+  ag.onclick=async()=>{$('sMsg').textContent='Abrindo…';try{await FB.linkGoogle();done()}catch(e){$('sMsg').textContent=authMsg(e)}};
+  $('aE').onclick=async()=>{const em=$('aEm').value.trim(),pw=$('aPw').value;if(!em||!pw){$('sMsg').textContent='Preencha e-mail e senha.';return}
+   try{await FB.linkPassword(em,pw);done()}catch(e){$('sMsg').textContent=authMsg(e)}};
+ }
  $('sSave').onclick=async()=>{
   const patch={appName:$('sApp').value.trim()||'Casa Co-op','p1.name':$('sP1').value.trim()||NAME.p1,'p1.color':$('sC1').dataset.v,'p2.name':$('sP2').value.trim()||NAME.p2,'p2.color':$('sC2').dataset.v};
   try{await FB.updateHouse(houseId,patch);closeModal()}catch(e){$('sMsg').textContent='Não salvou ('+(e&&e.code||'erro')+').'}
@@ -850,6 +916,7 @@ async function start(){
  applyConfig();render();
  gate('<p class="hint">Carregando…</p>');
  FB=await window.FBReady;
+ if(FB.isEmailLink&&FB.isEmailLink()){const em=FB.savedEmail();if(em){try{await FB.finishEmailLink(em)}catch(e){showFinishLink()}}else showFinishLink()}
  FB.onAuth(async u=>{
   unsubs.forEach(x=>{try{x()}catch(e){}});unsubs=[];
   if(!u){houseId=null;house=null;me=null;showSignIn();return}
@@ -857,7 +924,7 @@ async function start(){
   gate('<p class="hint">Abrindo a sua casa…</p>');
   try{houseId=await FB.myHouse()}catch(e){houseId=null}
   const inv=parseInvite();
-  if(houseId&&(!inv||inv.h===houseId)){if(inv)history.replaceState(null,'',location.pathname);enterHouse()}else showCreate();
+  if(houseId&&(!inv||inv.h===houseId)){if(inv)clearInvite();enterHouse()}else showCreate();
  });
 }
 start();
