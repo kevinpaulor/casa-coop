@@ -27,6 +27,35 @@ try {
 }
 getRedirectResult(auth).catch(() => {});
 
+
+// ---------- Presença e sessões (para a central do administrador) ----------
+let sid = null, info = {}, hb = null, startAt = 0, activeMs = 0, visibleSince = null;
+function device() {
+  const u = navigator.userAgent, m = /Mobi|Android|iPhone|iPad/i.test(u);
+  const os = /iPhone|iPad/.test(u) ? 'iOS' : /Android/.test(u) ? 'Android' : /Windows/.test(u) ? 'Windows' : /Mac/.test(u) ? 'Mac' : 'outro';
+  return (m ? 'celular' : 'computador') + ' · ' + os;
+}
+function tick() { if (visibleSince) { const n = Date.now(); activeMs += n - visibleSince; visibleSince = n; } }
+async function beat(state) {
+  const u = auth.currentUser; if (!u || !sid) return;
+  tick();
+  const now = Date.now(), dev = device();
+  try {
+    await setDoc(doc(fs, 'presence', u.uid), { uid: u.uid, name: u.displayName || '', email: u.email || '', state, lastSeen: now,
+      device: dev, sessionId: sid, ...info }, { merge: true });
+    await setDoc(doc(fs, 'sessions', sid), { uid: u.uid, name: u.displayName || '', start: startAt, last: now, activeMs,
+      device: dev, houseName: info.houseName || '', player: info.player || '' }, { merge: true });
+  } catch (e) { /* sem conexão: tenta de novo no próximo pulso */ }
+}
+function stopTrack() { clearInterval(hb); hb = null; sid = null; }
+function onVis() {
+  if (!sid) return;
+  if (document.visibilityState === 'visible') { visibleSince = Date.now(); beat('online'); }
+  else { tick(); visibleSince = null; beat('away'); }
+}
+document.addEventListener('visibilitychange', onVis);
+addEventListener('pagehide', () => { if (sid) beat('offline'); });
+
 const FB = {
   user: null,
   onAuth(cb) { onAuthStateChanged(auth, u => { FB.user = u; cb(u); }); },
@@ -40,7 +69,7 @@ const FB = {
       throw e;
     }
   },
-  signOut() { return signOut(auth); },
+  async signOut() { try { await beat('offline'); } catch (e) {} stopTrack(); return signOut(auth); },
   async myHouse() {
     const s = await getDoc(doc(fs, 'users', auth.currentUser.uid));
     return s.exists() ? (s.data().houseId || null) : null;
@@ -60,6 +89,14 @@ const FB = {
     await updateDoc(doc(fs, 'houses', h), upd);
     await setDoc(doc(fs, 'users', uid), { houseId: h });
   },
+  trackStart() {
+    if (hb || !auth.currentUser) return;
+    sid = auth.currentUser.uid.slice(0, 10) + '-' + Date.now().toString(36);
+    startAt = Date.now(); activeMs = 0; visibleSince = document.visibilityState === 'visible' ? Date.now() : null;
+    beat(visibleSince ? 'online' : 'away');
+    hb = setInterval(() => { if (document.visibilityState === 'visible') beat('online'); }, 90000);
+  },
+  trackInfo(o) { info = { ...info, ...o }; beat(document.visibilityState === 'visible' ? 'online' : 'away'); },
   watchHouse(h, next, err) { return onSnapshot(doc(fs, 'houses', h), s => next(s.exists() ? s.data() : null), err); },
   updateHouse(h, patch) { return updateDoc(doc(fs, 'houses', h), patch); },
   // Mesmo formato que o jogo já usa: db.collection('tasks').doc(id).set(...), .onSnapshot(...), .orderBy().limit().onSnapshot()

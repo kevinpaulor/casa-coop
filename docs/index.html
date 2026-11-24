@@ -830,6 +830,7 @@ function onHouse(h){
  setPlayers();applyConfig();
  const uid=FB.user.uid;me=h.p1&&h.p1.uid===uid?'p1':h.p2&&h.p2.uid===uid?'p2':null;
  iAmOwner=h.owner===uid;renderMe();render();
+ if(FB.trackInfo)FB.trackInfo({houseId,houseName:h.appName||'',player:me?NAME[me]:''});
  updateStatus();
 }
 function enterHouse(){
@@ -852,6 +853,7 @@ async function start(){
  FB.onAuth(async u=>{
   unsubs.forEach(x=>{try{x()}catch(e){}});unsubs=[];
   if(!u){houseId=null;house=null;me=null;showSignIn();return}
+  if(FB.trackStart)FB.trackStart();
   gate('<p class="hint">Abrindo a sua casa…</p>');
   try{houseId=await FB.myHouse()}catch(e){houseId=null}
   const inv=parseInvite();
