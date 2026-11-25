@@ -49,7 +49,7 @@ td small{display:block;color:var(--dim);font-size:16px}
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ONLINE_MS=3*60e3,AWAY_MS=30*60e3,DAY=864e5;
-let API,presence=[],sessions=[],houses=[],feedback=[],user=null,denied=false;
+let API,presence=[],sessions=[],houses=[],feedback=[],user=null,denied=false,release=null,versions=null,relErr='';
 function ago(ms){if(!ms)return '—';const s=Math.max(0,(Date.now()-ms)/1e3);if(s<60)return 'agora';if(s<3600)return Math.floor(s/60)+' min';if(s<86400)return Math.floor(s/3600)+' h '+Math.floor(s%3600/60)+' min';return Math.floor(s/86400)+' d'}
 function dur(ms){ms=Math.max(0,ms||0);const m=Math.round(ms/60e3);if(m<1)return '< 1 min';if(m<60)return m+' min';return Math.floor(m/60)+' h '+(m%60)+' min'}
 function when(ms){if(!ms)return '—';const d=new Date(ms);return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
@@ -100,6 +100,25 @@ function wireFeedback(){
    el.appendChild(box);r.disabled=true;box.querySelector('button').onclick=()=>API.setFeedback(id,{reply:box.querySelector('textarea').value.trim().slice(0,400),status:f.status==='nova'?'lida':f.status,updatedAt:Date.now()}).catch(e=>alert('Não salvou: '+(e.code||e)));};
  });
 }
+function releaseHTML(){
+ if(!versions)return '';
+ const stable=(release&&+release.stable)||+versions.default||1,beta=+versions.beta||0,notes=versions.notes||{};
+ const hist=(release&&Array.isArray(release.history))?release.history:[];
+ const prev=hist.length?hist[hist.length-1].from:null;
+ return `<h2>🚀 ATUALIZAÇÕES</h2><div class="fb">
+  <p><b>Versão de todos:</b> v${stable} — ${esc(notes[stable]||'')}</p>
+  ${beta>stable?`<p style="margin-top:8px"><b style="color:var(--green)">🧪 Em teste:</b> v${beta} — ${esc(notes[beta]||'')}</p>
+   <p style="margin-top:8px"><a class="chip" href="v/${beta}/" style="text-decoration:none">🧪 TESTAR v${beta}</a> <button class="btn" id="relOk">✅ APROVAR v${beta} PARA TODOS</button></p>`:'<p style="margin-top:8px;color:var(--dim)">Nenhuma atualização esperando aprovação.</p>'}
+  ${prev&&prev!==stable?`<p style="margin-top:8px"><button class="chip" id="relBack">↩ VOLTAR TODOS PARA v${prev}</button> <small>se algo quebrou</small></p>`:''}
+  ${relErr?`<p class="risk">${esc(relErr)}</p>`:''}
+  <p style="color:var(--dim);margin-top:8px;font-size:15px">Os dados (tarefas, cartas, pontos) são os mesmos em todas as versões. Aprovar ou voltar só troca a tela do jogo.</p></div>`;
+}
+function wireRelease(){
+ const set=async(to,from)=>{relErr='';try{const hist=((release&&release.history)||[]).slice(-20);hist.push({from,to,at:Date.now()});await API.setRelease({stable:to,approvedAt:Date.now(),by:user.email||'',history:hist})}catch(e){relErr='Não salvou ('+(e&&e.code||'erro')+'). As regras novas do Firestore já foram publicadas?';render()}};
+ const st=(release&&+release.stable)||+versions.default||1;
+ const ok=$('relOk');if(ok)ok.onclick=()=>{if(confirm('Liberar v'+versions.beta+' para todo mundo?'))set(+versions.beta,st)};
+ const bk=$('relBack');if(bk)bk.onclick=()=>{const h=release.history,p=h[h.length-1].from;if(confirm('Voltar todo mundo para v'+p+'?'))set(p,st)};
+}
 function render(){
  if(denied){$('app').innerHTML=`<div class="msg"><h1>ACESSO RESTRITO</h1><p>Esta central é só do administrador.</p>
   <p style="margin-top:10px">Se você é o administrador, cole este UID nas regras do Firestore (linha <b>ADMIN_UID</b>) e publique:</p>
@@ -141,10 +160,11 @@ function render(){
    <p>${esc(f.text)}</p>${risks(f.text).length?`<p class="risk">⚠ Atenção: ${risks(f.text).map(esc).join(' · ')}</p>`:''}${f.reply?`<p class="rep">💬 ${esc(f.reply)}</p>`:''}
    <div class="fba">${Object.keys(STATUS).map(k=>`<button class="chip ${k===f.status?'on':''}" data-st="${k}">${STATUS[k]}</button>`).join('')}
    <button class="chip" data-reply="1">💬 responder</button><button class="btn cp" data-copy="1">📋 COPIAR PARA APLICAR</button></div></div>`).join(''):'<p style="color:var(--dim)">Nenhuma sugestão ainda.</p>'}</div>
+  ${releaseHTML()}
   <h2>🏠 CASAS</h2><div class="scroll"><table><tr><th>JOGO</th><th>JOGADORES</th><th>CRIADA EM</th></tr>${hrows||'<tr><td colspan="3">Nenhuma casa ainda.</td></tr>'}</table></div>
   <p style="color:var(--dim);margin-top:14px;font-size:16px">Online = app aberto na tela nos últimos 3 min · Segundo plano = app aberto mas fora da tela · Tempo ativo = tempo com o app visível.</p>`;
  $('out').onclick=()=>API.signOut();
- wireFeedback();
+ wireFeedback();wireRelease();
 }
 (async()=>{
  API=await window.ADMINReady;let unsub=[];
@@ -156,6 +176,8 @@ function render(){
   unsub.push(API.watchPresence(l=>{presence=l;render()},deny));
   unsub.push(API.watchSessions(Date.now()-7*DAY,l=>{sessions=l;render()},deny));
   unsub.push(API.watchHouses(l=>{houses=l;render()},deny));
+  fetch('versions.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(v=>{versions=v;render()}).catch(()=>{});
+  if(API.watchRelease)unsub.push(API.watchRelease(r=>{release=r;render()},()=>{}));
   if(API.watchFeedback)unsub.push(API.watchFeedback(l=>{feedback=l;if(!document.querySelector('.replybox textarea:focus'))render()},()=>{}));
  });
  setInterval(()=>{if(user&&!denied&&presence.length)render()},30000);

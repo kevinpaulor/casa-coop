@@ -7,7 +7,7 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
   sendPasswordResetEmail, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, getDoc, setDoc, updateDoc,
-  deleteDoc, onSnapshot, query, orderBy, limit, arrayUnion, where, addDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+  deleteDoc, onSnapshot, query, orderBy, limit, arrayUnion, where, addDoc, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const notConfigured = !firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith('COLE');
 if (notConfigured) {
@@ -89,7 +89,7 @@ const FB = {
   },
   // Link mágico por e-mail (sem senha)
   async sendEmailLink(email) {
-    await sendSignInLinkToEmail(auth, email, { url: location.origin + location.pathname, handleCodeInApp: true });
+    await sendSignInLinkToEmail(auth, email, { url: (window.CC_ROOT || (location.origin + location.pathname)), handleCodeInApp: true });
     try { localStorage.setItem('cc-email-link', email); } catch (e) {}
   },
   isEmailLink() { return isSignInWithEmailLink(auth, location.href); },
@@ -173,6 +173,21 @@ const FB = {
   },
   aiLeft: async h => { const s = await getDoc(doc(fs, 'houses', h, 'events', 'ai-' + new Date().toISOString().slice(0, 10)));
     return AI_DAILY - (s.exists() ? (s.data().n || 0) : 0); },
+  // ===== Backups da casa (um por dia, guardados no Firebase junto da casa; ficam os últimos 30) =====
+  async backupToday(h, payload) {
+    const id = new Date().toISOString().slice(0, 10), r = doc(fs, 'houses', h, 'backups', id);
+    if ((await getDoc(r)).exists()) return false;
+    await setDoc(r, payload); return true;
+  },
+  async saveBackup(h, id, payload) { await setDoc(doc(fs, 'houses', h, 'backups', id), payload); },
+  async listBackups(h) {
+    const s = await getDocs(query(collection(fs, 'houses', h, 'backups'), orderBy('at', 'desc'), limit(60)));
+    return s.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+  async pruneBackups(h, keep = 30) {
+    const l = await this.listBackups(h);
+    for (const b of l.slice(keep)) { try { await deleteDoc(doc(fs, 'houses', h, 'backups', b.id)); } catch (e) {} }
+  },
   watchHouse(h, next, err) { return onSnapshot(doc(fs, 'houses', h), s => next(s.exists() ? s.data() : null), err); },
   updateHouse(h, patch) { return updateDoc(doc(fs, 'houses', h), patch); },
   // Mesmo formato que o jogo já usa: db.collection('tasks').doc(id).set(...), .onSnapshot(...), .orderBy().limit().onSnapshot()

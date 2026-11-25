@@ -24,3 +24,12 @@ Resumo:
 
 Criado por **Kevin Paulo** ([@Arkev.arq](https://www.instagram.com/arkev.arq/)) em 2026, com ajuda do Claude.
 Licença [MIT](LICENSE): qualquer pessoa pode usar, copiar e modificar, desde que mantenha o aviso de autoria.
+
+## Atualizações em duas etapas
+- `docs/index.html` é só a porta de entrada: lê no Firestore (`release/current.stable`) qual versão está liberada e abre `docs/v/<versão>/`.
+- Versão nova entra como pasta `docs/v/<n>/` e em `docs/versions.json` como `beta`. Só o administrador vê o atalho **🧪 TESTAR** e aprova na central (**✅ APROVAR PARA TODOS**). Na central também dá para **↩ VOLTAR** para a versão anterior.
+- Correção direta para todos = alterar a pasta da versão que já está liberada.
+- Todas as versões usam os mesmos dados: mudanças precisam manter os dados compatíveis.
+
+## Backups
+A partir da v2, cada casa guarda sozinha 1 backup por dia em `houses/{casa}/backups` (últimos 30 dias). Em ⚙ → 🛟 BACKUPS dá para salvar agora, baixar o arquivo e (só o dono) restaurar.

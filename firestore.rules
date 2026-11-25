@@ -13,6 +13,12 @@ service cloud.firestore {
     // ADMIN_UID: troque pelo seu UID (a página admin.html mostra qual é).
     function isAdmin() { return signedIn() && request.auth.uid == 'cJlpKeeaNhSeIBnHhqItvCTGAxx2'; }
 
+    // Versão do jogo liberada para todos: qualquer um lê, só o administrador muda (na central).
+    match /release/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // Presença: cada pessoa grava só a própria; só o administrador lê.
     match /presence/{uid} {
       allow write: if signedIn() && request.auth.uid == uid;
@@ -82,7 +88,7 @@ service cloud.firestore {
 
       // Tarefas, cartas, sugestões e log: os dois leem e escrevem.
       match /{col}/{id} {
-        allow read, write: if col in ['tasks', 'cards', 'suggestions', 'events'] && isMember(h);
+        allow read, write: if col in ['tasks', 'cards', 'suggestions', 'events', 'backups'] && isMember(h);
       }
     }
   }

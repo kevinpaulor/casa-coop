@@ -4,7 +4,7 @@ import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, collection, onSnapshot, query, where, orderBy, limit, doc, updateDoc }
+import { getFirestore, collection, onSnapshot, query, where, orderBy, limit, doc, updateDoc, setDoc }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const app = initializeApp(firebaseConfig);
@@ -20,5 +20,7 @@ window.__adminResolve({
   watchSessions: (sinceMs, next, err) => onSnapshot(query(collection(fs, 'sessions'), where('start', '>=', sinceMs), orderBy('start', 'desc'), limit(1000)), s => next(snapList(s)), err),
   watchHouses: (next, err) => onSnapshot(collection(fs, 'houses'), s => next(snapList(s)), err),
   watchFeedback: (next, err) => onSnapshot(query(collection(fs, 'feedback'), orderBy('createdAt', 'desc'), limit(300)), s => next(snapList(s)), err),
-  setFeedback: (id, data) => updateDoc(doc(fs, 'feedback', id), data)
+  setFeedback: (id, data) => updateDoc(doc(fs, 'feedback', id), data),
+  watchRelease: (next, err) => onSnapshot(doc(fs, 'release', 'current'), s => next(s.exists() ? s.data() : null), err),
+  setRelease: (data) => setDoc(doc(fs, 'release', 'current'), data, { merge: true })
 });
