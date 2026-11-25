@@ -500,10 +500,29 @@ function openAssign(c){
  modal(`<h2>${esc(c.n).toUpperCase()}<br><span style="color:#fff">★ ${c.xp} XP</span></h2><div style="width:90px;margin:0 auto">${svg(c.k,'')}</div>
   <p class="hint" style="margin-top:8px">Quem vai fazer?</p>
   <div class="acts"><button class="btn k" id="aK">1P ${esc(NAME.p1.toUpperCase())}</button><button class="btn j" id="aJ">2P ${esc(NAME.p2.toUpperCase())}</button></div>
-  <div class="acts"><button class="chip" id="aD">🎨 DESENHAR ÍCONE</button></div>
+  <div class="acts"><button class="chip" id="aD">🎨 DESENHAR ÍCONE</button><button class="chip" id="aDel">🗑 APAGAR CARTA</button></div>
   <div class="acts"><button class="btn ghost" id="aX">CANCELAR</button></div>`);
- $('aD').onclick=()=>openDraw(c);
+ $('aD').onclick=()=>openDraw(c);$('aDel').onclick=()=>deleteCard(c);
  $('aK').onclick=e=>{addTask(c,'p1',e);closeModal()};$('aJ').onclick=e=>{addTask(c,'p2',e);closeModal()};$('aX').onclick=closeModal;
+}
+/* Apagar carta = esconder do baralho. Nada some de verdade: as tarefas já feitas continuam valendo
+   os pontos que tinham, e dá para trazer a carta de volta em ⚙ → ♻ CARTAS APAGADAS. */
+function deleteCard(c){
+ confirmBox(`Apagar a carta <b>${esc(c.n)}</b> do baralho?<br><span style="font-size:15px;opacity:.85">As tarefas já feitas com ela continuam valendo os pontos. Dá para trazer de volta em ⚙ → ♻ CARTAS APAGADAS.</span>`,async()=>{
+  const cur=extraCards[c.id]||{},data={...cur,name:cur.name||c.n,xp:cur.xp||c.xp,hidden:true,hiddenAt:now(),hiddenBy:me||''};
+  extraCards[c.id]=data;render();
+  try{await db.collection('cards').doc(c.id).set(data);logEvent('card_del',{name:c.n,cardId:c.id});beep(SFX.todo);banner('CARTA APAGADA',c.n.toUpperCase())}
+  catch(e){delete extraCards[c.id].hidden;render();alertBox('Não apagou ('+(e&&e.code||'erro')+'). Tente de novo.')}
+ });
+}
+function openTrash(){
+ const gone=Object.entries(extraCards).filter(([,c])=>c&&c.hidden).sort((a,b)=>(b[1].hiddenAt||0)-(a[1].hiddenAt||0));
+ const base=id=>CATALOG.find(c=>c.k===id)||{};
+ modal(`<h2>♻ CARTAS APAGADAS</h2>${gone.length?gone.map(([id,c])=>`<div style="display:flex;align-items:center;gap:8px;justify-content:space-between;border-bottom:1px dashed #444;padding:6px 0"><span class="hint" style="margin:0">${esc(c.name||base(id).n||id)} · ${+c.xp||base(id).xp||0}XP</span><button class="chip" data-r="${esc(id)}">TRAZER DE VOLTA</button></div>`).join(''):'<p class="hint">Nenhuma carta apagada.</p>'}
+  <div class="acts"><button class="btn ghost" id="tX">FECHAR</button></div>`);
+ $('tX').onclick=closeModal;
+ document.querySelectorAll('[data-r]').forEach(b=>b.onclick=async()=>{const id=b.dataset.r,c={...extraCards[id],hidden:false};delete c.hiddenAt;delete c.hiddenBy;
+  try{await db.collection('cards').doc(id).set(c);extraCards[id]=c;logEvent('card_back',{name:c.name||base(id).n||id,cardId:id});beep(SFX.add);openTrash();render()}catch(e){alertBox('Não deu ('+(e&&e.code||'erro')+').')}});
 }
 function openCustom(){
  modal(`<h2>CARTA NOVA</h2><input id="cN" maxlength="40" placeholder="Nome da tarefa (ex: lavar o carro)">
@@ -899,7 +918,9 @@ const EV={
  task_todo:e=>['✕','tarefas',`<b>${esc(e.name)}</b> voltou para não feita (${NAME[e.owner]||'?'})`],
  task_del:e=>['🗑','tarefas',`${NAME[e.by]||'Alguém'} removeu <b>${esc(e.name)}</b>`],
  card_new:e=>['🃏','cartas',`${NAME[e.by]||'Alguém'} criou a carta <b>${esc(e.name)}</b> (${e.xp}XP)`],
- card_icon:e=>['🎨','cartas',`O Claude desenhou o ícone de <b>${esc(e.name)}</b>`],
+ card_icon:e=>['🎨','cartas',`Novo ícone para <b>${esc(e.name)}</b>`],
+ card_del:e=>['🗑','cartas',`${NAME[e.by]||'Alguém'} apagou a carta <b>${esc(e.name)}</b>`],
+ card_back:e=>['♻','cartas',`${NAME[e.by]||'Alguém'} trouxe de volta a carta <b>${esc(e.name)}</b>`],
  sug_new:e=>['💡','ideias',`${NAME[e.by]||'Alguém'} mandou uma sugestão ao administrador: <i>${esc(e.text||'')}</i>`],
  sug_approved:e=>['✅','ideias',`${esc(NAME.p1)} aprovou: <i>${esc(e.text||'')}</i>`],
  sug_rejected:e=>['⛔','ideias',`${esc(NAME.p1)} recusou: <i>${esc(e.text||'')}</i>`],
@@ -1116,7 +1137,7 @@ function parseMigration(txt){
   if(/^[a-z]{1,20}$/.test(c.icon||''))x.icon=c.icon;if(Number.isFinite(+c.order))x.order=+c.order;if(c.hidden===true)x.hidden=true;x.provisional=false;
   if(typeof c.svg==='string'){const cl=cleanSVG(c.svg.slice(0,30000));if(cl)x.svg=cl}
   if(Object.keys(x).length>1)cards.push([id,x])}
- const TYPES=/^(task_(new|todo|doing|done|del)|card_(new|icon)|sug_(new|approved|rejected|done))$/;
+ const TYPES=/^(task_(new|todo|doing|done|del)|card_(new|icon|del|back)|sug_(new|approved|rejected|done))$/;
  const events=[];for(const e of(o.events||[]).slice(0,5000)){if(!e||!ID.test(e.id)||!TYPES.test(e.type||'')||!ts(e.at))continue;
   const x={type:e.type,at:ts(e.at),by:who(e.by)||''};if(e.name)x.name=str(e.name,60);if(e.text)x.text=str(e.text,300);if(who(e.owner))x.owner=e.owner;
   const xp=num(e.xp,0,999);if(xp!==null&&e.xp!=null)x.xp=xp;if(ID.test(e.taskId||''))x.taskId=e.taskId;if(ID.test(e.cardId||''))x.cardId=e.cardId;events.push([e.id,x])}
@@ -1165,7 +1186,7 @@ function openSettings(){
    <input id="aEm" type="email" placeholder="ou e-mail" style="width:100%;font-family:'VT323';font-size:20px;background:#000;color:#fff;border:2px solid var(--line);padding:8px;margin-top:6px">
    <input id="aPw" type="password" placeholder="senha (mín. 6)" style="width:100%;font-family:'VT323';font-size:20px;background:#000;color:#fff;border:2px solid var(--line);padding:8px;margin-top:6px">
    <div class="acts"><button class="btn ghost" id="aE">SALVAR COM E-MAIL</button></div></div>`:''}
-  <div class="acts"><button class="btn" id="sAv">🖼 MEU AVATAR</button>${iAmOwner?'<button class="btn ghost" id="sImp">📥 TRAZER DO CLAUDE</button>':''}</div>
+  <div class="acts"><button class="btn" id="sAv">🖼 MEU AVATAR</button><button class="btn ghost" id="sTrash">♻ CARTAS APAGADAS</button>${iAmOwner?'<button class="btn ghost" id="sImp">📥 TRAZER DO CLAUDE</button>':''}</div>
   <p class="hint" style="margin-top:10px">Nomes e cores</p>
   <input id="sApp" maxlength="24" value="${esc(CONFIG.appName)}">
   <input id="sP1" maxlength="16" value="${esc(NAME.p1)}">${colorPick('sC1',PCOL.p1)}
@@ -1176,7 +1197,7 @@ function openSettings(){
  wirePick('sC1');wirePick('sC2');
  if(!joined){$('sCopy').onclick=async()=>{try{await navigator.clipboard.writeText(inviteLink());$('sMsg').textContent='Link copiado! Mande para '+NAME.p2+'.'}catch(e){$('sLink').select();$('sMsg').textContent='Selecionado — copie pelo celular.'}};
   const sh=$('sShare');if(sh)sh.onclick=()=>navigator.share({title:CONFIG.appName,text:'Bora dividir as tarefas da casa? Entra aqui:',url:inviteLink()}).catch(()=>{});}
- $('sAv').onclick=openAvatar;{const b=$('sImp');if(b)b.onclick=openMigration}
+ $('sAv').onclick=openAvatar;$('sTrash').onclick=openTrash;{const b=$('sImp');if(b)b.onclick=openMigration}
  $('sX').onclick=closeModal;$('sOut').onclick=()=>{if(FB.isAnon&&FB.isAnon()&&!confirmAnonOut())return;closeModal();FB.signOut()};
  const ag=$('aG');if(ag){
   const done=()=>{closeModal();banner('CONTA SALVA!','AGORA DÁ PRA TROCAR DE APARELHO');updateStatus()};
