@@ -500,9 +500,9 @@ function openAssign(c){
  modal(`<h2>${esc(c.n).toUpperCase()}<br><span style="color:#fff">★ ${c.xp} XP</span></h2><div style="width:90px;margin:0 auto">${svg(c.k,'')}</div>
   <p class="hint" style="margin-top:8px">Quem vai fazer?</p>
   <div class="acts"><button class="btn k" id="aK">1P ${esc(NAME.p1.toUpperCase())}</button><button class="btn j" id="aJ">2P ${esc(NAME.p2.toUpperCase())}</button></div>
-  <div class="acts"><button class="chip" id="aD">🎨 DESENHAR ÍCONE</button><button class="chip" id="aDel">🗑 APAGAR CARTA</button></div>
+  <div class="acts"><button class="chip" id="aD">🎨 DESENHAR ÍCONE</button><button class="chip" id="aXp">✏ MUDAR XP</button><button class="chip" id="aDel">🗑 APAGAR CARTA</button></div>
   <div class="acts"><button class="btn ghost" id="aX">CANCELAR</button></div>`);
- $('aD').onclick=()=>openDraw(c);$('aDel').onclick=()=>deleteCard(c);
+ $('aD').onclick=()=>openDraw(c);$('aDel').onclick=()=>deleteCard(c);$('aXp').onclick=()=>editCardXP(c);
  $('aK').onclick=e=>{addTask(c,'p1',e);closeModal()};$('aJ').onclick=e=>{addTask(c,'p2',e);closeModal()};$('aX').onclick=closeModal;
 }
 /* Apagar carta = esconder do baralho. Nada some de verdade: as tarefas já feitas continuam valendo
@@ -523,6 +523,22 @@ function openTrash(){
  $('tX').onclick=closeModal;
  document.querySelectorAll('[data-r]').forEach(b=>b.onclick=async()=>{const id=b.dataset.r,c={...extraCards[id],hidden:false};delete c.hiddenAt;delete c.hiddenBy;
   try{await db.collection('cards').doc(id).set(c);extraCards[id]=c;logEvent('card_back',{name:c.name||base(id).n||id,cardId:id});beep(SFX.add);openTrash();render()}catch(e){alertBox('Não deu ('+(e&&e.code||'erro')+').')}});
+}
+/* Mudar o XP de uma carta só desta casa. Vale também para as tarefas já feitas com ela (o placar recalcula). */
+function editCardXP(c){
+ const opts=[...new Set([5,10,15,20,25,30,40,50,60,80,100,c.xp])].sort((a,b)=>a-b);
+ modal(`<h2>✏ MUDAR XP</h2><p class="hint"><b>${esc(c.n)}</b> vale hoje <b>${c.xp} XP</b>.</p>
+  <select id="xpSel">${opts.map(x=>`<option value="${x}" ${x===c.xp?'selected':''}>${x} XP</option>`).join('')}</select>
+  <p class="hint" style="font-size:15px;opacity:.85">Muda só na sua casa. As tarefas já feitas com esta carta passam a valer o novo XP, e o placar recalcula.</p>
+  <div class="acts"><button class="btn" id="xpOk">SALVAR</button><button class="btn ghost" id="xpX">CANCELAR</button></div>`);
+ $('xpX').onclick=closeModal;
+ $('xpOk').onclick=async()=>{
+  const xp=Math.max(1,Math.min(500,+$('xpSel').value|0));if(xp===c.xp){closeModal();return}
+  const cur=extraCards[c.id]||{},data={...cur,name:cur.name||c.n,xp,color:XPCOL(xp)};
+  try{await db.collection('cards').doc(c.id).set(data);extraCards[c.id]=data;render();logEvent('card_xp',{name:c.n,cardId:c.id,xp,from:c.xp});
+   closeModal();beep(SFX.add);banner('XP ATUALIZADO',`${c.n.toUpperCase()} · ${c.xp} → ${xp} XP`)}
+  catch(e){alertBox('Não salvou ('+(e&&e.code||'erro')+'). Tente de novo.')}
+ };
 }
 function openCustom(){
  modal(`<h2>CARTA NOVA</h2><input id="cN" maxlength="40" placeholder="Nome da tarefa (ex: lavar o carro)">
@@ -919,6 +935,7 @@ const EV={
  task_del:e=>['🗑','tarefas',`${NAME[e.by]||'Alguém'} removeu <b>${esc(e.name)}</b>`],
  card_new:e=>['🃏','cartas',`${NAME[e.by]||'Alguém'} criou a carta <b>${esc(e.name)}</b> (${e.xp}XP)`],
  card_icon:e=>['🎨','cartas',`Novo ícone para <b>${esc(e.name)}</b>`],
+ card_xp:e=>['✏','cartas',`${NAME[e.by]||'Alguém'} mudou <b>${esc(e.name)}</b> de ${+e.from||0} para ${+e.xp||0} XP`],
  card_del:e=>['🗑','cartas',`${NAME[e.by]||'Alguém'} apagou a carta <b>${esc(e.name)}</b>`],
  card_back:e=>['♻','cartas',`${NAME[e.by]||'Alguém'} trouxe de volta a carta <b>${esc(e.name)}</b>`],
  sug_new:e=>['💡','ideias',`${NAME[e.by]||'Alguém'} mandou uma sugestão ao administrador: <i>${esc(e.text||'')}</i>`],
@@ -1137,7 +1154,7 @@ function parseMigration(txt){
   if(/^[a-z]{1,20}$/.test(c.icon||''))x.icon=c.icon;if(Number.isFinite(+c.order))x.order=+c.order;if(c.hidden===true)x.hidden=true;x.provisional=false;
   if(typeof c.svg==='string'){const cl=cleanSVG(c.svg.slice(0,30000));if(cl)x.svg=cl}
   if(Object.keys(x).length>1)cards.push([id,x])}
- const TYPES=/^(task_(new|todo|doing|done|del)|card_(new|icon|del|back)|sug_(new|approved|rejected|done))$/;
+ const TYPES=/^(task_(new|todo|doing|done|del)|card_(new|icon|del|back|xp)|sug_(new|approved|rejected|done))$/;
  const events=[];for(const e of(o.events||[]).slice(0,5000)){if(!e||!ID.test(e.id)||!TYPES.test(e.type||'')||!ts(e.at))continue;
   const x={type:e.type,at:ts(e.at),by:who(e.by)||''};if(e.name)x.name=str(e.name,60);if(e.text)x.text=str(e.text,300);if(who(e.owner))x.owner=e.owner;
   const xp=num(e.xp,0,999);if(xp!==null&&e.xp!=null)x.xp=xp;if(ID.test(e.taskId||''))x.taskId=e.taskId;if(ID.test(e.cardId||''))x.cardId=e.cardId;events.push([e.id,x])}
