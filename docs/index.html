@@ -209,7 +209,7 @@ header{display:flex;align-items:center;justify-content:space-between;gap:8px;mar
 <div class="wrap" id="app">
   <header>
     <div class="logo" id="logo"></div>
-    <div style="display:flex;gap:8px;align-items:center"><button class="chip" id="installBtn" title="Instalar o app no aparelho">📲 BAIXAR APP</button><button class="chip" id="logBtn" title="Registro de ações">📜 LOG</button><div class="me" id="meBox"></div></div>
+    <div style="display:flex;gap:8px;align-items:center"><a class="chip" id="admBtn" href="admin.html" hidden title="Central do administrador" style="text-decoration:none;border-color:var(--gold);color:var(--gold)">🛡 ADM</a><button class="chip" id="installBtn" title="Instalar o app no aparelho">📲 BAIXAR APP</button><button class="chip" id="logBtn" title="Registro de ações">📜 LOG</button><div class="me" id="meBox"></div></div>
   </header>
   <div class="status-line" id="statusLine">Conectando…</div>
 
@@ -1096,6 +1096,66 @@ async function joinFlow(){
 }
 let anonOutArmed=false;
 function confirmAnonOut(){if(anonOutArmed)return true;anonOutArmed=true;$('sMsg').textContent='⚠ Sem conta, sair = perder o acesso à casa. Toque em "sair" de novo para confirmar.';setTimeout(()=>anonOutArmed=false,6000);return false}
+/* ===== Migração: traz tudo do Casa Co-op que roda dentro do Claude (arquivo gerado lá em "🚀 LEVAR PARA O APP ABERTO") =====
+   Tudo é conferido campo a campo: só entram textos curtos, números, cores #rrggbb, ícones limpos pelo cleanSVG
+   e rostos em imagem PNG/JPEG. Nada do arquivo vira código. Importar de novo não duplica (mesmos ids). */
+function parseMigration(txt){
+ let o;try{o=JSON.parse(txt)}catch(e){return null}
+ if(!o||o.app!=='casa-coop-migracao'||!Array.isArray(o.tasks))return null;
+ const ID=/^[A-Za-z0-9_-]{1,60}$/,str=(v,n)=>typeof v==='string'?v.slice(0,n):'',num=(v,a,b)=>Number.isFinite(+v)?Math.min(b,Math.max(a,Math.round(+v))):null,
+  col=v=>typeof v==='string'&&/^#[0-9a-fA-F]{6}$/.test(v)?v:null,
+  face=v=>typeof v==='string'&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(v)&&v.length<400000?v:null,
+  who=v=>v==='kevin'||v==='joanna'?v:null,ts=v=>num(v,1e12,4e12);
+ const players={};for(const k of['kevin','joanna']){const p=o.players&&o.players[k]||{};players[k]={name:str(p.name,16)||k,color:col(p.color),face:face(p.face)}}
+ const tasks=[];for(const t of o.tasks.slice(0,3000)){if(!t||!ID.test(t.id)||!who(t.owner))continue;
+  const st=['todo','doing','done'].includes(t.status)?t.status:'todo',x={id:t.id,name:str(t.name,60),k:ID.test(t.k||'')?t.k:'estrela',owner:t.owner,by:who(t.by)||t.owner,status:st,xp:num(t.xp,0,999)??0};
+  if(ID.test(t.cardId||''))x.cardId=t.cardId;for(const f of['createdAt','updatedAt','startedAt','doneAt']){const v=ts(t[f]);if(v)x[f]=v}
+  if(x.name)tasks.push(x)}
+ const cards=[];for(const[id,c]of Object.entries(o.cards||{}).slice(0,300)){if(!ID.test(id)||!c||typeof c!=='object')continue;
+  const x={};if(c.name)x.name=str(c.name,40);const xp=num(c.xp,0,999);if(xp!==null)x.xp=xp;if(col(c.color))x.color=c.color;
+  if(/^[a-z]{1,20}$/.test(c.icon||''))x.icon=c.icon;if(Number.isFinite(+c.order))x.order=+c.order;if(c.hidden===true)x.hidden=true;x.provisional=false;
+  if(typeof c.svg==='string'){const cl=cleanSVG(c.svg.slice(0,30000));if(cl)x.svg=cl}
+  if(Object.keys(x).length>1)cards.push([id,x])}
+ const TYPES=/^(task_(new|todo|doing|done|del)|card_(new|icon)|sug_(new|approved|rejected|done))$/;
+ const events=[];for(const e of(o.events||[]).slice(0,5000)){if(!e||!ID.test(e.id)||!TYPES.test(e.type||'')||!ts(e.at))continue;
+  const x={type:e.type,at:ts(e.at),by:who(e.by)||''};if(e.name)x.name=str(e.name,60);if(e.text)x.text=str(e.text,300);if(who(e.owner))x.owner=e.owner;
+  const xp=num(e.xp,0,999);if(xp!==null&&e.xp!=null)x.xp=xp;if(ID.test(e.taskId||''))x.taskId=e.taskId;if(ID.test(e.cardId||''))x.cardId=e.cardId;events.push([e.id,x])}
+ return{players,tasks,cards,events};
+}
+function openMigration(){
+ modal(`<h2>📥 TRAZER DO CLAUDE</h2>
+  <p class="hint">No Casa Co-op dentro do Claude, abra o <b>Placar</b> → <b>🚀 LEVAR PARA O APP ABERTO</b>. Depois escolha aqui o arquivo que ele baixou (ou cole o texto copiado).</p>
+  <input type="file" id="mgF" accept=".json,application/json">
+  <textarea id="mgT" style="width:100%;height:90px;margin-top:8px;background:#000;color:#fff;font-family:monospace;font-size:12px" placeholder="…ou cole aqui"></textarea>
+  <div id="mgInfo"></div><p class="hint" id="mgMsg"></p>
+  <div class="acts"><button class="btn" id="mgGo" disabled>IMPORTAR</button><button class="btn ghost" id="mgX">FECHAR</button></div>`);
+ let data=null;$('mgX').onclick=closeModal;
+ const check=()=>{data=parseMigration($('mgT').value.trim());$('mgGo').disabled=!data;
+  if(!data){$('mgInfo').innerHTML=$('mgT').value.trim()?'<p class="hint" style="color:var(--orange)">⚠ Não é um arquivo de migração do Casa Co-op.</p>':'';return}
+  const pts=k=>data.tasks.filter(t=>t.owner===k&&t.status==='done').reduce((a,t)=>a+t.xp,0);
+  const guess=NAME.p2.toLowerCase().startsWith(data.players.kevin.name.toLowerCase().slice(0,3))?'p2':'p1';
+  $('mgInfo').innerHTML=`<p class="hint">Encontrado: <b>${data.tasks.length}</b> tarefas · <b>${data.cards.length}</b> cartas · <b>${data.events.length}</b> registros do log · rostos: ${['kevin','joanna'].filter(k=>data.players[k].face).map(k=>esc(data.players[k].name)).join(', ')||'nenhum'}</p>
+   <p class="hint">${esc(data.players.kevin.name)}: ${pts('kevin')} XP · ${esc(data.players.joanna.name)}: ${pts('joanna')} XP (pelas cartas de lá)</p>
+   <p class="hint">${esc(data.players.kevin.name)} aqui é: <select id="mgK"><option value="p1"${guess==='p1'?' selected':''}>1P ${esc(NAME.p1)}</option><option value="p2"${guess==='p2'?' selected':''}>2P ${esc(NAME.p2)}</option></select></p>
+   <label class="hint sm" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="mgNames" checked> Usar os nomes, cores e rostos de lá</label>
+   <p class="hint sm" style="opacity:.8">As tarefas e cartas daqui continuam. Importar duas vezes não duplica nada.</p>`};
+ $('mgT').oninput=check;$('mgF').onchange=async e=>{const f=e.target.files[0];if(f){$('mgT').value=await f.text();check()}};
+ $('mgGo').onclick=async()=>{
+  if(!data)return;const b=$('mgGo');b.disabled=true;
+  const kev=$('mgK').value,map={kevin:kev,joanna:kev==='p1'?'p2':'p1'},M=v=>map[v]||v;
+  let done=0;const total=data.tasks.length+data.cards.length+data.events.length;
+  const tick=()=>{done++;if(done%10===0||done===total)$('mgMsg').textContent=`Importando… ${done}/${total}`};
+  try{
+   if($('mgNames').checked){const patch={};for(const k of['kevin','joanna']){const p=data.players[k],s=map[k];patch[s+'.name']=p.name;if(p.color)patch[s+'.color']=p.color;if(p.face)patch[s+'.face']=p.face}
+    await FB.updateHouse(houseId,patch)}
+   for(const[id,c]of data.cards){await db.collection('cards').doc(id).set(c);tick()}
+   for(const t of data.tasks){await db.collection('tasks').doc(t.id).set({...t,owner:M(t.owner),by:M(t.by)});tick()}
+   for(const[id,e]of data.events){const x={...e};if(x.by)x.by=M(x.by);if(x.owner)x.owner=M(x.owner);await db.collection('events').doc(id).set(x);tick()}
+   try{await db.collection('events').doc('import-'+Date.now()).set({type:'card_new',at:Date.now(),by:me||'',name:'📥 Histórico trazido do Claude'})}catch(e){}
+   closeModal();banner('TUDO IMPORTADO!',`${data.tasks.length} TAREFAS · ${data.cards.length} CARTAS`);try{beep(SFX.done)}catch(e){}
+  }catch(e){$('mgMsg').textContent=`Parou em ${done}/${total} (${e&&e.code||'erro'}). Pode tentar de novo: o que já entrou não duplica.`;b.disabled=false}
+ };
+}
 function openSettings(){
  const joined=!!(house&&house.p2&&house.p2.uid);
  modal(`<h2>⚙ ${esc(CONFIG.appName.toUpperCase())}</h2>
@@ -1105,7 +1165,7 @@ function openSettings(){
    <input id="aEm" type="email" placeholder="ou e-mail" style="width:100%;font-family:'VT323';font-size:20px;background:#000;color:#fff;border:2px solid var(--line);padding:8px;margin-top:6px">
    <input id="aPw" type="password" placeholder="senha (mín. 6)" style="width:100%;font-family:'VT323';font-size:20px;background:#000;color:#fff;border:2px solid var(--line);padding:8px;margin-top:6px">
    <div class="acts"><button class="btn ghost" id="aE">SALVAR COM E-MAIL</button></div></div>`:''}
-  <div class="acts"><button class="btn" id="sAv">🖼 MEU AVATAR</button></div>
+  <div class="acts"><button class="btn" id="sAv">🖼 MEU AVATAR</button>${iAmOwner?'<button class="btn ghost" id="sImp">📥 TRAZER DO CLAUDE</button>':''}</div>
   <p class="hint" style="margin-top:10px">Nomes e cores</p>
   <input id="sApp" maxlength="24" value="${esc(CONFIG.appName)}">
   <input id="sP1" maxlength="16" value="${esc(NAME.p1)}">${colorPick('sC1',PCOL.p1)}
@@ -1116,7 +1176,7 @@ function openSettings(){
  wirePick('sC1');wirePick('sC2');
  if(!joined){$('sCopy').onclick=async()=>{try{await navigator.clipboard.writeText(inviteLink());$('sMsg').textContent='Link copiado! Mande para '+NAME.p2+'.'}catch(e){$('sLink').select();$('sMsg').textContent='Selecionado — copie pelo celular.'}};
   const sh=$('sShare');if(sh)sh.onclick=()=>navigator.share({title:CONFIG.appName,text:'Bora dividir as tarefas da casa? Entra aqui:',url:inviteLink()}).catch(()=>{});}
- $('sAv').onclick=openAvatar;
+ $('sAv').onclick=openAvatar;{const b=$('sImp');if(b)b.onclick=openMigration}
  $('sX').onclick=closeModal;$('sOut').onclick=()=>{if(FB.isAnon&&FB.isAnon()&&!confirmAnonOut())return;closeModal();FB.signOut()};
  const ag=$('aG');if(ag){
   const done=()=>{closeModal();banner('CONTA SALVA!','AGORA DÁ PRA TROCAR DE APARELHO');updateStatus()};
@@ -1129,8 +1189,9 @@ function openSettings(){
   try{await FB.updateHouse(houseId,patch);closeModal()}catch(e){$('sMsg').textContent='Não salvou ('+(e&&e.code||'erro')+').'}
  };
 }
+const ADMIN_UID='cJlpKeeaNhSeIBnHhqItvCTGAxx2'; // só mostra o atalho; quem protege a central são as regras do Firestore
 function onHouse(h){
- house=h;
+ house=h;{const a=$('admBtn');if(a)a.hidden=!(FB.user&&FB.user.uid===ADMIN_UID)}
  const okFace=f=>typeof f==='string'&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(f)&&f.length<400000?f:'';
  CONFIG={appName:h.appName||'Casa Co-op',p1:{name:h.p1&&h.p1.name,color:h.p1&&h.p1.color,face:okFace(h.p1&&h.p1.face)},p2:{name:h.p2&&h.p2.name,color:h.p2&&h.p2.color,face:okFace(h.p2&&h.p2.face)}};
  setPlayers();applyConfig();
