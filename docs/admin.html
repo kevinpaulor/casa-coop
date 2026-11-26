@@ -92,7 +92,7 @@ async function copyReq(list,btn){
 const STATUS={nova:'📨 nova',lida:'👀 lida',planejada:'🛠 vai entrar',feita:'🚀 feita',recusada:'✕ recusada'};
 function wireFeedback(){
  const cpAll=document.getElementById('copyPlan');if(cpAll)cpAll.onclick=()=>copyReq(feedback.filter(f=>f.status==='planejada'),cpAll);
- document.querySelectorAll('.fb').forEach(el=>{const id=el.dataset.id;
+ document.querySelectorAll('.fb[data-id]').forEach(el=>{const id=el.dataset.id;
   el.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>API.setFeedback(id,{status:b.dataset.st,updatedAt:Date.now()}).catch(e=>alert('Não salvou: '+(e.code||e))));
   const c=el.querySelector('[data-copy]');c.onclick=()=>copyReq([feedback.find(x=>x.id===id)],c);
   const r=el.querySelector('[data-reply]');r.onclick=()=>{const f=feedback.find(x=>x.id===id)||{};
@@ -110,14 +110,25 @@ function releaseHTML(){
   ${beta>stable?`<p style="margin-top:8px"><b style="color:var(--green)">🧪 Em teste:</b> v${beta} — ${esc(notes[beta]||'')}</p>
    <p style="margin-top:8px"><a class="chip" href="v/${beta}/" style="text-decoration:none">🧪 TESTAR v${beta}</a> <button class="btn" id="relOk">✅ APROVAR v${beta} PARA TODOS</button></p>`:'<p style="margin-top:8px;color:var(--dim)">Nenhuma atualização esperando aprovação.</p>'}
   ${prev&&prev!==stable?`<p style="margin-top:8px"><button class="chip" id="relBack">↩ VOLTAR TODOS PARA v${prev}</button> <small>se algo quebrou</small></p>`:''}
-  ${relErr?`<p class="risk">${esc(relErr)}</p>`:''}
+  ${relErr?`<p class="${relErr.startsWith('✅')?'rep':'risk'}">${esc(relErr)}</p>`:''}
   <p style="color:var(--dim);margin-top:8px;font-size:15px">Os dados (tarefas, cartas, pontos) são os mesmos em todas as versões. Aprovar ou voltar só troca a tela do jogo.</p></div>`;
 }
+let relArm=null,relBusy=false;   // botão de 2 toques (sem janela de confirmação do navegador, que alguns celulares bloqueiam)
 function wireRelease(){
- const set=async(to,from)=>{relErr='';try{const hist=((release&&release.history)||[]).slice(-20);hist.push({from,to,at:Date.now()});await API.setRelease({stable:to,approvedAt:Date.now(),by:user.email||'',history:hist})}catch(e){relErr='Não salvou ('+(e&&e.code||'erro')+'). As regras novas do Firestore já foram publicadas?';render()}};
+ if(!versions)return;
  const st=(release&&+release.stable)||+versions.default||1;
- const ok=$('relOk');if(ok)ok.onclick=()=>{if(confirm('Liberar v'+versions.beta+' para todo mundo?'))set(+versions.beta,st)};
- const bk=$('relBack');if(bk)bk.onclick=()=>{const h=release.history,p=h[h.length-1].from;if(confirm('Voltar todo mundo para v'+p+'?'))set(p,st)};
+ const set=async(to,from)=>{relBusy=true;relErr='';relArm=null;render();
+  try{const hist=((release&&release.history)||[]).slice(-20);hist.push({from,to,at:Date.now()});
+   await API.setRelease({stable:to,approvedAt:Date.now(),by:user.email||'',history:hist});relErr='✅ Pronto! Todo mundo já abre a v'+to+'.'}
+  catch(e){relErr='Não salvou ('+(e&&e.code||e&&e.message||'erro')+'). '+(String(e&&e.code).includes('permission')?'Falta publicar as regras novas no Firebase (Firestore → Regras).':'')}
+  relBusy=false;render()};
+ const ok=$('relOk');
+ if(ok){if(relBusy){ok.disabled=true;ok.textContent='SALVANDO…'}else if(relArm==='ok')ok.textContent='TOQUE DE NOVO PARA CONFIRMAR v'+versions.beta;
+  ok.onclick=()=>{if(relBusy)return;if(relArm==='ok')set(+versions.beta,st);else{relArm='ok';render();setTimeout(()=>{if(relArm==='ok'){relArm=null;render()}},6000)}}}
+ const bk=$('relBack');
+ if(bk){const h=(release&&release.history)||[],p=h.length?h[h.length-1].from:null;
+  if(relArm==='back')bk.textContent='TOQUE DE NOVO PARA VOLTAR PARA v'+p;
+  bk.onclick=()=>{if(relBusy||!p)return;if(relArm==='back')set(p,st);else{relArm='back';render();setTimeout(()=>{if(relArm==='back'){relArm=null;render()}},6000)}}}
 }
 function render(){
  if(denied){$('app').innerHTML=`<div class="msg"><h1>ACESSO RESTRITO</h1><p>Esta central é só do administrador.</p>
@@ -164,7 +175,7 @@ function render(){
   <h2>🏠 CASAS</h2><div class="scroll"><table><tr><th>JOGO</th><th>JOGADORES</th><th>CRIADA EM</th></tr>${hrows||'<tr><td colspan="3">Nenhuma casa ainda.</td></tr>'}</table></div>
   <p style="color:var(--dim);margin-top:14px;font-size:16px">Online = app aberto na tela nos últimos 3 min · Segundo plano = app aberto mas fora da tela · Tempo ativo = tempo com o app visível.</p>`;
  $('out').onclick=()=>API.signOut();
- wireFeedback();wireRelease();
+ try{wireFeedback()}catch(e){console.warn(e)}try{wireRelease()}catch(e){console.warn(e)}
 }
 (async()=>{
  API=await window.ADMINReady;let unsub=[];
