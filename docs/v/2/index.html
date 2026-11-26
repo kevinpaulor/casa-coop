@@ -202,6 +202,11 @@ header{display:flex;align-items:center;justify-content:space-between;gap:8px;mar
 .popin{animation:popin .5s cubic-bezier(.2,1.6,.4,1)}
 @keyframes popin{0%{transform:scale(.3) rotate(-8deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
 .blink{animation:blink .8s steps(2) infinite}@keyframes blink{50%{opacity:.35}}
+.card.special{background:linear-gradient(160deg,#fff3b0,#ffd23f 55%,#ffb347);box-shadow:0 0 0 3px #fff7,0 0 18px 4px #ffd23f88;animation:spGlow 2.2s ease-in-out infinite}
+.card.special .t{color:#fff}.card.special .badge{position:absolute;bottom:36px;left:50%;transform:translateX(-50%);font-size:7px!important;background:#000;color:#ffd23f;font:9px 'Press Start 2P';padding:3px 6px;border:2px solid #ffd23f;white-space:nowrap}
+@keyframes spGlow{50%{box-shadow:0 0 0 3px #fff9,0 0 28px 8px #ffd23fbb}}
+.folgatag{position:absolute;left:50%;top:-6px;transform:translateX(-50%);background:#ff7b8a;color:#000;font:9px 'Press Start 2P';padding:2px 5px;border:2px solid #000;white-space:nowrap;z-index:3}
+.row.special{outline:3px solid #ffd23f}
 </style>
 </head>
 <body>
@@ -294,6 +299,7 @@ const TIERS=[[0,'#3ea8ff','Azul'],[50,'#2ee6a6','Verde'],[150,'#ffe14d','Amarelo
 /* ================= ÍCONES (cartoon, contorno marrom-escuro) ================= */
 const O='stroke="#2a1d12" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"';
 const I={
+ folga:`<path d="M32 56C14 44 6 34 6 24c0-7 6-13 13-13 6 0 10 3 13 8 3-5 7-8 13-8 7 0 13 6 13 13 0 10-8 20-26 32z" fill="#ff7b8a" ${O}/><g transform="rotate(-35 32 31)"><rect x="12" y="25" width="40" height="12" rx="6" fill="#ffe0b8" ${O}/><rect x="26" y="25" width="12" height="12" fill="#f4c27a" ${O}/><circle cx="30" cy="29" r="1" fill="#2a1d12"/><circle cx="34" cy="33" r="1" fill="#2a1d12"/><circle cx="34" cy="29" r="1" fill="#2a1d12"/><circle cx="30" cy="33" r="1" fill="#2a1d12"/></g><path d="M50 6l2 4 4 2-4 2-2 4-2-4-4-2 4-2z" fill="#fff" ${O}/>`,
  cama:`<rect x="6" y="20" width="7" height="34" rx="2" fill="#a0673a" ${O}/><rect x="51" y="30" width="7" height="24" rx="2" fill="#a0673a" ${O}/><rect x="13" y="33" width="38" height="13" rx="3" fill="#6fb86b" ${O}/><path d="M13 39h38" stroke="#4a8f4a" stroke-width="2"/><rect x="14" y="26" width="14" height="9" rx="4" fill="#fff" ${O}/><path d="M13 46h38v4H13z" fill="#e8d8b8" ${O}/>`,
  plantas:`<path d="M18 38h28l-4 20H22z" fill="#c8693a" ${O}/><rect x="16" y="34" width="32" height="6" rx="2" fill="#a8532a" ${O}/><path d="M32 34V18" ${O}/><path d="M32 26c-10 1-16-5-16-12 9-1 16 4 16 12z" fill="#55b84a" ${O}/><path d="M32 22c0-9 6-14 15-13 0 8-6 13-15 13z" fill="#6ccf5c" ${O}/>`,
  guardar:`<rect x="12" y="40" width="40" height="12" rx="3" fill="#2f5f86" ${O}/><rect x="14" y="29" width="36" height="12" rx="3" fill="#4f8fb8" ${O}/><rect x="16" y="18" width="32" height="12" rx="3" fill="#2f5f86" ${O}/><path d="M24 18v-3h16v3" fill="none" ${O}/><path d="M20 46h24M22 35h20M22 24h20" stroke="#bfe3ff" stroke-width="2"/>`,
@@ -421,6 +427,7 @@ function renderRace(){
   const rd=$('rd-'+w);rd.style.left=pct+'%';
   if(!rd.dataset.built){rd.innerHTML=ROCKET(PCOL[w])+`<img src="${FACE[w]}" alt="${NAME[w]}">`;rd.dataset.built=1}
   $('xpv-'+w).textContent=xp+' XP';
+  {const ln=$('lane-'+w);let tg=ln&&ln.querySelector('.folgatag');const on=folgaHoje(w);if(on&&!tg&&ln){tg=document.createElement('span');tg.className='folgatag';tg.textContent='🩹 DE FOLGA HOJE';ln.appendChild(tg)}else if(!on&&tg)tg.remove()}
  });
  $('legend').innerHTML='Rastro: '+TIERS.map(([n,c,l])=>`<i style="background:${c}"></i>${n}+`).join(' ');
 }
@@ -429,7 +436,7 @@ function renderRace(){
 function cardHTML(c){return `<div class="card" style="--c:${c.c}" data-k="${esc(c.id||c.k)}">
   ${c.prov?'<span class="prov" title="Ícone provisório — aguardando o Claude">⏳</span>':''}<div class="t">${esc(c.n)}</div>${svg(c.k)}<div class="ft">${STAR}<span class="xp">${c.xp}XP</span></div></div>`}
 function rowHTML(t){
- return `<div class="row ${t.status}" style="--c:${(cardFor(t)||{}).c||XPCOL(txp(t))}" id="r-${t.id}">
+ return `<div class="row ${t.status}${t.special==='folga'?' special':''}" style="--c:${(cardFor(t)||{}).c||XPCOL(txp(t))}" id="r-${t.id}">
   <div style="position:relative">${svg(t.k)}<img class="who" src="${FACE[t.owner]}" alt=""></div>
   <div><div class="t">${esc(t.name)}</div><div class="m">${STAR}<b>${txp(t)}XP</b></div></div>
   <div class="btns">
@@ -444,9 +451,9 @@ function render(){
  const v=$('view');
  if(view==='catalogo'){
   v.innerHTML=`<p class="hint">Toque numa carta para mandar a tarefa para ${esc(NAME.p1)} ou ${esc(NAME.p2)}.</p>
-   <div class="grid">${deck().map(cardHTML).join('')}
+   <div class="grid">${folgaCardHTML()}${deck().map(cardHTML).join('')}
    <div class="card custom" data-custom="1"><div class="t">CARTA NOVA</div><div class="plus">+</div><div class="ft" style="justify-content:center">${STAR}</div></div></div>`;
-  v.querySelectorAll('.card').forEach(el=>el.onclick=()=>el.dataset.custom?openCustom():openAssign(deck().find(c=>(c.id||c.k)===el.dataset.k)));
+  v.querySelectorAll('.card').forEach(el=>el.onclick=()=>el.dataset.folga?openFolga():el.dataset.custom?openCustom():openAssign(deck().find(c=>(c.id||c.k)===el.dataset.k)));
  }else if(view==='p1'||view==='p2'){
   const mine=list().filter(t=>t.owner===view);
   const by=s=>mine.filter(t=>t.status===s).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
@@ -496,6 +503,34 @@ function render(){
 function modal(html){$('modalBox').innerHTML=html;$('modal').hidden=false;$('modal').scrollTop=0}
 function closeModal(){$('modal').hidden=true;$('modalBox').classList.remove('wide')}
 $('modal').onclick=e=>{if(e.target.id==='modal'&&!$('modal').dataset.lock)closeModal()};
+/* ===== CARTA ESPECIAL: FOLGA DE SAÚDE (sugestão da Joanna) =====
+   Quem ficou doente recebe XP sem fazer tarefa. Só o PARCEIRO pode dar (ninguém dá para si mesmo),
+   no máximo 1 por pessoa por dia. Não pergunta nem guarda o motivo/doença: só "folga de saúde".
+   Fica salva como uma tarefa concluída comum (mesmos campos de sempre), com special:'folga'. */
+const FOLGA={k:'folga',id:'folga-saude',n:'Folga de saúde',xp:30,c:'#ffd23f'};
+const dayKey=t=>new Date(t).toLocaleDateString('sv-SE');   // AAAA-MM-DD no fuso do aparelho
+const folgaHoje=w=>list().some(t=>t.special==='folga'&&t.owner===w&&dayKey(t.doneAt||t.createdAt||0)===dayKey(now()));
+function folgaCardHTML(){return `<div class="card special" data-folga="1" style="--c:#ffd23f"><span class="badge">★ ESPECIAL</span><div class="t">${esc(FOLGA.n)}</div>${svg('folga')}<div class="ft">${STAR}<span class="xp">${FOLGA.xp}XP</span></div></div>`}
+function openFolga(){
+ const other=me==='p1'?'p2':me==='p2'?'p1':null;
+ if(!other){alertBox('Entre na sua casa para dar uma folga.');return}
+ const ja=folgaHoje(other);
+ modal(`<h2>🩹 FOLGA DE SAÚDE<br><span style="color:#fff">★ ${FOLGA.xp} XP</span></h2><div style="width:90px;margin:0 auto">${svg('folga','')}</div>
+  <p class="hint" style="margin-top:8px">Carta especial para quando alguém da casa fica doente e não consegue fazer tarefas. Só o parceiro pode dar.</p>
+  ${ja?`<p class="hint" style="color:var(--orange)">${esc(NAME[other])} já recebeu uma folga hoje. Melhoras! 💛</p>`
+   :`<div class="acts"><button class="btn ${other==='p1'?'k':'j'}" id="fGo">💛 DAR FOLGA PARA ${esc(NAME[other].toUpperCase())}</button></div>`}
+  <div class="acts"><button class="btn ghost" id="fX">CANCELAR</button></div>`);
+ $('fX').onclick=closeModal;
+ const go=$('fGo');if(go)go.onclick=e=>giveFolga(other,e);
+}
+function giveFolga(w,ev){
+ if(!w||w===me||folgaHoje(w))return;
+ const id='t'+now().toString(36)+Math.random().toString(36).slice(2,6),t0=now();
+ write(id,{id,cardId:null,k:'folga',name:FOLGA.n,xp:FOLGA.xp,owner:w,status:'done',special:'folga',createdAt:t0,updatedAt:t0,doneAt:t0,by:me||''});
+ logEvent('folga',{taskId:id,name:FOLGA.n,owner:w,xp:FOLGA.xp});
+ closeModal();beep(SFX.done);banner('FOLGA DE SAÚDE 💛',`${NAME[w].toUpperCase()} +${FOLGA.xp} XP · MELHORAS!`);
+ const r=ev&&ev.target.getBoundingClientRect();if(r)burst(r.left+r.width/2,r.top,PCOL[w],'+'+FOLGA.xp+' XP');
+}
 function openAssign(c){
  modal(`<h2>${esc(c.n).toUpperCase()}<br><span style="color:#fff">★ ${c.xp} XP</span></h2><div style="width:90px;margin:0 auto">${svg(c.k,'')}</div>
   <p class="hint" style="margin-top:8px">Quem vai fazer?</p>
@@ -985,6 +1020,7 @@ const EV={
  task_del:e=>['🗑','tarefas',`${NAME[e.by]||'Alguém'} removeu <b>${esc(e.name)}</b>`],
  card_new:e=>['🃏','cartas',`${NAME[e.by]||'Alguém'} criou a carta <b>${esc(e.name)}</b> (${e.xp}XP)`],
  card_icon:e=>['🎨','cartas',`Novo ícone para <b>${esc(e.name)}</b>`],
+ folga:e=>['💛','tarefas',`${NAME[e.by]||'Alguém'} deu uma <b>folga de saúde</b> para ${NAME[e.owner]||''} (+${+e.xp||0} XP)`],
  card_xp:e=>['✏','cartas',`${NAME[e.by]||'Alguém'} mudou <b>${esc(e.name)}</b> de ${+e.from||0} para ${+e.xp||0} XP`],
  card_del:e=>['🗑','cartas',`${NAME[e.by]||'Alguém'} apagou a carta <b>${esc(e.name)}</b>`],
  card_back:e=>['♻','cartas',`${NAME[e.by]||'Alguém'} trouxe de volta a carta <b>${esc(e.name)}</b>`],

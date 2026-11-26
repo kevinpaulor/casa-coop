@@ -3,6 +3,6 @@
   "beta": 2,
   "notes": {
     "1": "Versão base (cartas, avatar, desenho automático, apagar carta, mudar XP, trazer do Claude).",
-    "2": "🛟 Backups: cópia automática diária da casa no Firebase (30 dias), salvar agora, baixar arquivo e restaurar (só o dono da casa)."
+    "2": "🛟 Backups diários da casa (salvar, baixar, restaurar) + 💛 carta especial FOLGA DE SAÚDE (30 XP, só o parceiro dá, 1 por dia, selo no quadro)."
   }
 }
