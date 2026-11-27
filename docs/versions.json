@@ -1,8 +1,9 @@
 {
   "default": 2,
-  "beta": 0,
+  "beta": 3,
   "notes": {
     "1": "Versão base (cartas, avatar, desenho automático, apagar carta, mudar XP, trazer do Claude).",
-    "2": "🛟 Backups diários da casa (salvar, baixar, restaurar) + 💛 carta especial FOLGA DE SAÚDE (30 XP, só o parceiro dá, 1 por dia, selo no quadro)."
+    "2": "🛟 Backups diários da casa (salvar, baixar, restaurar) + 💛 carta especial FOLGA DE SAÚDE (30 XP, só o parceiro dá, 1 por dia, selo no quadro).",
+    "3": "⏳ Tarefa só vale XP depois que o parceiro confirma (som diferente, aprovação automática em 24h) + 😈 carta de punição (−5 a −20 XP, máx. 5 por dia, XP nunca negativo). Ideias da Ingrid."
   }
 }
