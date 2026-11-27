@@ -759,8 +759,10 @@ function offerMirror(){
 
 
 /* ===== Desenhar o ícone de uma carta com o Claude (da própria pessoa) ===== */
-function drawPrompt(name){
- return `Desenhe um ícone para uma carta de jogo de tarefas domésticas: "${name}".
+function drawPrompt(name,idea){
+ idea=String(idea||'').replace(/[`"<>\\{}]/g,'').replace(/\s+/g,' ').trim().slice(0,140);
+ return `Desenhe um ícone para uma carta de jogo de tarefas domésticas: "${name}".${idea?`
+Ideia de quem pediu: ${idea}.`:''}
 Estilo: cartoon flat, cores vivas, contorno marrom-escuro grosso, sem texto, centralizado, legível em 56px.
 Regras técnicas: responda SÓ com o código de um <svg viewBox="0 0 64 64">, usando apenas path, rect, circle, ellipse, line, polyline, polygon e g.
 Nos contornos use stroke="#2a1d12" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round". Cores em hex.
@@ -817,10 +819,12 @@ function revealImage(box,src,N,ms){
 }
 function popIn(el){if(!el)return;el.classList.remove('popin');void el.offsetWidth;el.classList.add('popin')}
 function openDraw(c){
- const id=c.id||c.k,prompt=drawPrompt(c.n);
+ const id=c.id||c.k;let prompt=drawPrompt(c.n);
  modal(`<h2>🎨 ÍCONE: ${esc(c.n).toUpperCase()}</h2>
+  <p class="hint sm" style="margin-bottom:4px">💡 Sua ideia para o desenho (opcional):</p>
+  <textarea id="dIdea" rows="2" maxlength="140" placeholder="Ex: um gato laranja segurando uma vassoura"></textarea>
     <div class="acts"><button class="btn" id="dAuto">✨ DESENHAR AUTOMÁTICO</button></div>
-  <p class="hint sm" id="dLeft">Desenho grátis feito pelo Gemini (Google). Só o nome da carta é enviado.</p>
+  <p class="hint sm" id="dLeft">Desenho grátis feito pelo Gemini (Google). Só o nome da carta e a sua ideia são enviados.</p>
   <p class="hint sm" style="opacity:.7">— ou, do jeito manual —</p>
   <div class="acts"><button class="btn ghost" id="dCp">📋 COPIAR PEDIDO</button><a class="btn ghost" id="dOpen" href="https://claude.ai/new?q=${encodeURIComponent(prompt)}" target="_blank" rel="noopener">ABRIR O CLAUDE ↗</a></div>
   <textarea id="dSvg" rows="5" placeholder="Cole aqui o código <svg>…</svg> que o Claude devolveu"></textarea>
@@ -828,12 +832,13 @@ function openDraw(c){
   <p class="hint" id="dMsg"></p>
   <div class="acts"><button class="btn" id="dSave" disabled>SALVAR ÍCONE</button><button class="btn ghost" id="dX">FECHAR</button></div>`);
  let clean='';
+ $('dIdea').oninput=()=>{prompt=drawPrompt(c.n,$('dIdea').value);$('dOpen').href='https://claude.ai/new?q='+encodeURIComponent(prompt)};
  $('dCp').onclick=async()=>{try{await navigator.clipboard.writeText(prompt);$('dMsg').textContent='Pedido copiado! Cole no Claude.'}catch(e){$('dMsg').textContent='Não copiou — use ABRIR O CLAUDE.'}};
  $('dSvg').oninput=()=>{clean=cleanSVG(extractSVG($('dSvg').value));
   $('dPrev').innerHTML=clean?`<svg viewBox="0 0 64 64" width="100%" height="100%">${clean}</svg>`:'';
   $('dSave').disabled=!(clean&&clean.length>40);$('dMsg').textContent=clean?'':'Ainda não reconheci um desenho válido.'};
  $('dX').onclick=closeModal;
- if(FB&&FB.aiLeft&&houseId)FB.aiLeft(houseId).then(n=>{if($('dLeft'))$('dLeft').textContent=`Desenho grátis feito pelo Gemini (Google). Restam ${Math.max(0,n)} hoje nesta casa. Só o nome da carta é enviado.`}).catch(()=>{});
+ if(FB&&FB.aiLeft&&houseId)FB.aiLeft(houseId).then(n=>{if($('dLeft'))$('dLeft').textContent=`Desenho grátis feito pelo Gemini (Google). Restam ${Math.max(0,n)} hoje nesta casa. Só o nome da carta e a sua ideia são enviados.`}).catch(()=>{});
  $('dAuto').onclick=async()=>{
   const b=$('dAuto');b.disabled=true;b.textContent='✨ DESENHANDO…';b.classList.add('blink');$('dMsg').textContent='O Gemini está desenhando… leva alguns segundos.';
   const stop=drawAnim($('dPrev'),16);
